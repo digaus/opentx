@@ -74,6 +74,10 @@ void menuRadioTools(event_t event);
 void menuRadioSpectrumAnalyser(event_t event);
 void menuRadioPowerMeter(event_t event);
 void menuRadioCalibration(event_t event);
+void menuGhostModuleConfig(event_t event);
+#if defined(RADIO_CALIBRATION_HALL)
+void menuPotsCalibration(event_t event);
+#endif
 
 static const MenuHandlerFunc menuTabGeneral[MENU_RADIO_PAGES_COUNT]  = {
 #if defined(RADIO_TOOLS)

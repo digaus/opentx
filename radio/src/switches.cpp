@@ -55,7 +55,7 @@ LogicalSwitchesFlightModeContext lswFm[MAX_FLIGHT_MODES];
 #define LS_LAST_VALUE(fm, idx) lswFm[fm].lsw[idx].lastValue
 
 #if defined(PCBTARANIS) || defined(PCBHORUS)
-#if defined(PCBX9E)
+#if defined(PCBX9E) || defined(RADIO_FAMILY_TBS)
 tmr10ms_t switchesMidposStart[16];
 #else
 tmr10ms_t switchesMidposStart[6]; // TODO constant
@@ -66,6 +66,89 @@ uint8_t   potsPos[NUM_XPOTS];
 
 #define SWITCH_POSITION(sw)  (switchesPos & ((MASK_CFN_TYPE)1<<(sw)))
 #define POT_POSITION(sw)     ((potsPos[(sw)/XPOTS_MULTIPOS_COUNT] & 0x0f) == ((sw) % XPOTS_MULTIPOS_COUNT))
+
+#if defined(FUNCTION_SWITCHES)
+// Non pushed : SWSRC_Sx0 = -1024 = Sx(up) = state 0
+// Pushed : SWSRC_Sx2 = +1024 = Sx(down) = state 1
+
+uint8_t fsPreviousState = 0;
+
+void setFSStartupPosition()
+{
+  for (uint8_t i = 0; i < NUM_FUNCTIONS_SWITCHES; i++) {
+    uint8_t startPos = (g_model.functionSwitchStartConfig >> 2 * i) & 0x03;
+    switch(startPos) {
+      case FS_START_DOWN:
+        g_model.functionSwitchLogicalState &= ~(1 << i);   // clear state
+        break;
+
+      case FS_START_UP:
+        g_model.functionSwitchLogicalState |= 1 << i;
+        break;
+
+      case FS_START_PREVIOUS:
+      default:
+        // Do nothing, use existing g_model.functionSwitchLogicalState value
+        break;
+    }
+  }
+}
+
+uint8_t getFSLogicalState(uint8_t index)
+{
+  return (uint8_t )(bfSingleBitGet(g_model.functionSwitchLogicalState, index) >> (index));
+}
+
+uint8_t getFSPhysicalState(uint8_t index)
+{
+  return switchState(((index + NUM_REGULAR_SWITCHES) * 3) + 2) ? 1 : 0;
+}
+
+uint8_t getFSPreviousPhysicalState(uint8_t index)
+{
+  return (uint8_t )(bfSingleBitGet(fsPreviousState, index) >> (index));
+}
+
+void evalFunctionSwitches()
+{
+  for (uint8_t i = 0; i < NUM_FUNCTIONS_SWITCHES; i++) {
+    if (FSWITCH_CONFIG(i) == SWITCH_NONE) {
+      fsLedOff(i);
+      continue;
+    }
+
+    uint8_t physicalState = getFSPhysicalState(i);
+    if (physicalState != getFSPreviousPhysicalState(i)) {      // FS was moved
+      if ((FSWITCH_CONFIG(i) == SWITCH_2POS && physicalState == 1) || (FSWITCH_CONFIG(i) == SWITCH_TOGGLE)) {
+        if (IS_FSWITCH_GROUP_ON(FSWITCH_GROUP(i)) != 0) { // In an always on group
+          g_model.functionSwitchLogicalState |= 1 << i;   // Set bit
+        }
+        else {
+          g_model.functionSwitchLogicalState ^= 1 << i;   // Toggle bit
+        }
+      }
+
+      if (FSWITCH_GROUP(i) && physicalState == 1) {    // switch is in a group, other in group need to be turned off
+        for (uint8_t j = 0; j < NUM_FUNCTIONS_SWITCHES; j++) {
+          if (i == j)
+            continue;
+          if (FSWITCH_GROUP(j) == FSWITCH_GROUP(i)) {
+            g_model.functionSwitchLogicalState &= ~(1 << j);   // clear state
+          }
+        }
+      }
+
+      fsPreviousState ^= 1 << i;    // Toggle state
+      storageDirty(EE_MODEL);
+    }
+
+    if (getFSLogicalState(i))
+      fsLedOn(i);
+    else
+      fsLedOff(i);
+  }
+}
+#endif
 
 div_t switchInfo(int switchPosition)
 {
@@ -126,9 +209,35 @@ uint64_t check3PosSwitchPosition(uint8_t idx, uint8_t sw, bool startup)
 void getSwitchesPosition(bool startup)
 {
   uint64_t newPos = 0;
+#if defined(RADIO_TANGO)
+  CHECK_2POS(SW_SA);
+  CHECK_3POS(1, SW_SB);
+  CHECK_3POS(2, SW_SC);
+  CHECK_2POS(SW_SD);
+  CHECK_2POS(SW_SE);
+  CHECK_2POS(SW_SF);
+#elif defined(RADIO_MAMBO)
   CHECK_3POS(0, SW_SA);
   CHECK_3POS(1, SW_SB);
   CHECK_3POS(2, SW_SC);
+  CHECK_3POS(3, SW_SD);
+  CHECK_2POS(SW_SE);
+  CHECK_2POS(SW_SF);
+#else
+#if defined(RADIO_TX12) || defined(RADIO_ZORRO)
+  CHECK_2POS(SW_SA);
+  CHECK_3POS(0, SW_SB);
+  CHECK_3POS(1, SW_SC);
+#elif defined(RADIO_TPRO)
+  CHECK_3POS(0, SW_SA);
+  CHECK_3POS(1, SW_SB);
+  CHECK_2POS(SW_SC);
+  CHECK_2POS(SW_SD);
+#else
+  CHECK_3POS(0, SW_SA);
+  CHECK_3POS(1, SW_SB);
+  CHECK_3POS(2, SW_SC);
+#endif
 
 #if defined(PCBX9LITES)
   CHECK_2POS(SW_SD);
@@ -146,6 +255,23 @@ void getSwitchesPosition(bool startup)
 #elif defined(PCBXLITE)
   CHECK_3POS(3, SW_SD);
   // no SWE, SWF, SWG and SWH on XLITE
+#elif defined(RADIO_ZORRO)
+  CHECK_2POS(SW_SD);
+  CHECK_2POS(SW_SE);
+  CHECK_2POS(SW_SF);
+  CHECK_2POS(SW_SG);
+  CHECK_2POS(SW_SH);
+#elif defined(RADIO_TX12)
+  CHECK_2POS(SW_SD);
+  CHECK_3POS(2, SW_SE);
+  CHECK_3POS(3, SW_SF);
+#elif defined(RADIO_TPRO)
+  CHECK_2POS(SW_SE);
+  CHECK_2POS(SW_SF);
+  CHECK_2POS(SW_SG);
+  CHECK_2POS(SW_SH);
+  CHECK_2POS(SW_SI);
+  CHECK_2POS(SW_SJ);
 #elif defined(PCBX7)
   CHECK_3POS(3, SW_SD);
   CHECK_2POS(SW_SF);
@@ -164,7 +290,7 @@ void getSwitchesPosition(bool startup)
 
 #if defined(PCBX7ACCESS)
   CHECK_2POS(SW_SI);
-#elif defined(PCBHORUS) || defined(PCBX7)
+#elif defined(PCBHORUS) || (defined(PCBX7) && !defined(RADIO_ZORRO))
   CHECK_2POS(SW_SI);
   CHECK_2POS(SW_SJ);
 #endif
@@ -181,9 +307,10 @@ void getSwitchesPosition(bool startup)
   CHECK_3POS(14, SW_SQ);
   CHECK_3POS(15, SW_SR);
 #endif
+#endif
 
   switchesPos = newPos;
-
+#if NUM_XPOTS > 0
   for (int i=0; i<NUM_XPOTS; i++) {
     if (IS_POT_MULTIPOS(POT1+i)) {
       StepsCalibData * calib = (StepsCalibData *) &g_eeGeneral.calib[POT1+i];
@@ -208,6 +335,7 @@ void getSwitchesPosition(bool startup)
       }
     }
   }
+#endif
 }
 
 
@@ -434,7 +562,7 @@ bool getSwitch(swsrc_t swtch, uint8_t flags)
     result = latencyToggleSwitch;
   }
 #endif
-  else if (cs_idx <= SWSRC_LAST_SWITCH) {
+  else if (cs_idx <= (SWSRC_LAST_SWITCH - 3 * NUM_FUNCTIONS_SWITCHES)) {
 #if defined(PCBTARANIS) || defined(PCBHORUS)
     if (flags & GETSWITCH_MIDPOS_DELAY)
       result = SWITCH_POSITION(cs_idx-SWSRC_FIRST_SWITCH);
@@ -445,6 +573,13 @@ bool getSwitch(swsrc_t swtch, uint8_t flags)
 #endif
 
   }
+#if defined(FUNCTION_SWITCHES)
+  else if (cs_idx <= SWSRC_LAST_SWITCH) {
+    div_t qr = div(cs_idx - 3 * NUM_FUNCTIONS_SWITCHES, 3);
+    auto value = getFSLogicalState(qr.quot + 1);
+    result = qr.rem == -2 ? 1 - value : value;
+  }
+#endif
 #if NUM_XPOTS > 0
   else if (cs_idx <= SWSRC_LAST_MULTIPOS_SWITCH) {
     result = POT_POSITION(cs_idx-SWSRC_FIRST_MULTIPOS_SWITCH);
@@ -504,23 +639,55 @@ void evalLogicalSwitches(bool isCurrentFlightmode)
 }
 
 swarnstate_t switches_states = 0;
+uint8_t fsswitches_states = 0;
 swsrc_t getMovedSwitch()
 {
   static tmr10ms_t s_move_last_time = 0;
   swsrc_t result = 0;
 
 #if defined(PCBTARANIS) || defined(PCBHORUS)
-  for (int i=0; i<NUM_SWITCHES; i++) {
+  // Switches
+  for (int i = 0; i < NUM_SWITCHES - NUM_FUNCTIONS_SWITCHES; i++) {
     if (SWITCH_EXISTS(i)) {
-      swarnstate_t mask = ((swarnstate_t)0x03 << (i*2));
-      uint8_t prev = (switches_states & mask) >> (i*2);
-      uint8_t next = (1024+getValue(MIXSRC_SA+i)) / 1024;
+      swarnstate_t mask = ((swarnstate_t) 0x03 << (i * 2));
+      uint8_t prev = (switches_states & mask) >> (i * 2);
+      uint8_t next = (1024 + getValue(MIXSRC_SA + i)) / 1024;
       if (prev != next) {
-        switches_states = (switches_states & (~mask)) | ((swarnstate_t)next << (i*2));
-        result = 1+(3*i)+next;
+        switches_states = (switches_states & (~mask)) | ((swarnstate_t) next << (i * 2));
+        result = 1 + (3 * i) + next;
       }
     }
   }
+
+#if defined(FUNCTION_SWITCHES)
+  for (int i = 0; i < NUM_FUNCTIONS_SWITCHES; i++) {
+    if (FSWITCH_CONFIG(i) != SWITCH_NONE) {
+      auto prev = (uint8_t )(bfSingleBitGet(fsswitches_states, i) >> (i));
+      uint8_t next = getFSLogicalState(i);
+      if (prev != next) {
+        fsswitches_states ^= (-next ^ fsswitches_states) & (1 << i);
+        result = 2 + (3 * (i + NUM_REGULAR_SWITCHES)) + next;
+      }
+    }
+  }
+#endif
+
+#if NUM_XPOTS > 0
+  // Multipos
+  for (int i = 0; i < NUM_XPOTS; i++) {
+    if (IS_POT_MULTIPOS(POT1 + i)) {
+      StepsCalibData * calib = (StepsCalibData *) &g_eeGeneral.calib[POT1 + i];
+      if (IS_MULTIPOS_CALIBRATED(calib)) {
+        uint8_t prev = potsPos[i] & 0x0F;
+        uint8_t next = anaIn(POT1 + i) / (2 * RESX / calib->count);
+        if (prev != next) {
+          result = SWSRC_LAST_SWITCH + i * XPOTS_MULTIPOS_COUNT + next + 1;
+        }
+      }
+    }
+  }
+#endif
+
 #else
   // return delivers 1 to 3 for ID1 to ID3
   // 4..8 for all other switches if changed to true
@@ -601,7 +768,7 @@ void checkSwitches()
       }
     }
 #elif defined(PCBTARANIS)
-    for (int i=0; i<NUM_SWITCHES; i++) {
+    for (int i=0; i < (NUM_SWITCHES - NUM_FUNCTIONS_SWITCHES); i++) {
       if (SWITCH_WARNING_ALLOWED(i) && !(g_model.switchWarningEnable & (1<<i))) {
         swarnstate_t mask = ((swarnstate_t)0x03 << (i*2));
         if (!((states & mask) == (switches_states & mask))) {
@@ -653,8 +820,11 @@ void checkSwitches()
       }
       int x = SWITCH_WARNING_LIST_X;
       int y = SWITCH_WARNING_LIST_Y;
+#if defined(COLORLCD)
+      lcdNextPos = SWITCH_WARNING_LIST_X;
+#endif
       int numWarnings = 0;
-      for (int i=0; i<NUM_SWITCHES; ++i) {
+      for (int i=0; i < (NUM_SWITCHES - NUM_FUNCTIONS_SWITCHES); ++i) {
 #if defined(COLORLCD)
         if (SWITCH_WARNING_ALLOWED(i)) {
           unsigned int state = ((g_model.switchWarningState >> (3*i)) & 0x07);
@@ -662,8 +832,7 @@ void checkSwitches()
             if (++numWarnings < 6) {
               // LcdFlags attr = ((states & mask) == (switches_states & mask)) ? TEXT_COLOR : ALARM_COLOR;
               LcdFlags attr = ALARM_COLOR;
-              drawSwitch(x, y, SWSRC_FIRST_SWITCH+i*3+state-1, attr);
-              x += 35;
+              drawSwitch(lcdNextPos, y, SWSRC_FIRST_SWITCH+i*3+state-1, attr);
             }
           }
         }
@@ -696,8 +865,7 @@ void checkSwitches()
                 // TODO add an helper
                 strncpy(s, &STR_VSRCRAW[1+(NUM_STICKS+1+i)*STR_VSRCRAW[0]], STR_VSRCRAW[0]);
                 s[int(STR_VSRCRAW[0])] = '\0';
-                lcdDrawText(x, y, s, ALARM_COLOR);
-                x += 40;
+                lcdDrawText(lcdNextPos, y, s, ALARM_COLOR);
 #else
                 lcdDrawTextAtIndex(x, y, STR_VSRCRAW, NUM_STICKS + 1 + i, INVERS);
                 if (IS_POT(POT1 + i))

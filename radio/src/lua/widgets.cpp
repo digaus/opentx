@@ -253,23 +253,23 @@ class LuaWidget: public Widget
     LuaWidget(const WidgetFactory * factory, const Zone & zone, Widget::PersistentData * persistentData, int widgetData):
       Widget(factory, zone, persistentData),
       widgetData(widgetData),
-      errorMessage(0)
+      errorMessage(nullptr)
     {
     }
 
-    virtual ~LuaWidget()
+    ~LuaWidget() override
     {
       luaL_unref(lsWidgets, LUA_REGISTRYINDEX, widgetData);
-      if (errorMessage) free(errorMessage);
+      free(errorMessage);
     }
 
-    virtual void update();
+    void update() override;
 
     void refresh() override;
 
-    virtual void background();
+    void background() override;
 
-    virtual const char * getErrorMessage() const;
+    const char * getErrorMessage() const override;
 
   protected:
     int widgetData;
@@ -300,7 +300,7 @@ class LuaWidgetFactory: public WidgetFactory
     {
     }
 
-    virtual Widget * create(const Zone & zone, Widget::PersistentData * persistentData, bool init=true) const
+    Widget * create(const Zone & zone, Widget::PersistentData * persistentData, bool init=true) const override
     {
       if (lsWidgets == 0) return 0;
       if (init) {
@@ -319,7 +319,12 @@ class LuaWidgetFactory: public WidgetFactory
       lua_newtable(lsWidgets);
       int i = 0;
       for (const ZoneOption * option = options; option->name; option++, i++) {
-        l_pushtableint(option->name, persistentData->options[i].signedValue);
+        if (option->type == ZoneOption::String) {
+          lua_pushtablezstring(lsWidgets, option->name, persistentData->options[i].stringValue);
+        }
+        else {
+          l_pushtableint(option->name, persistentData->options[i].signedValue);
+        }
       }
 
       if (lua_pcall(lsWidgets, 2, 1, 0) != 0) {
@@ -349,7 +354,12 @@ void LuaWidget::update()
   lua_newtable(lsWidgets);
   int i = 0;
   for (const ZoneOption * option = getOptions(); option->name; option++, i++) {
-    l_pushtableint(option->name, persistentData->options[i].signedValue);
+    if (option->type == ZoneOption::String) {
+      lua_pushtablezstring(lsWidgets, option->name, persistentData->options[i].stringValue);
+    }
+    else {
+      l_pushtableint(option->name, persistentData->options[i].signedValue);
+    }
   }
 
   if (lua_pcall(lsWidgets, 2, 0, 0) != 0) {

@@ -18,7 +18,45 @@ boards = {
         "PCB": "X10",
         "PCBREV": "TX16S",
         "DEFAULT_MODE": "2",
-    }
+    },
+    "TX12_1": {
+        "PCB": "X7",
+        "PCBREV": "TX12",
+        "DEFAULT_MODE": "1",
+    },
+    "TX12_2": {
+        "PCB": "X7",
+        "PCBREV": "TX12",
+        "DEFAULT_MODE": "2",
+    },
+    "ZORRO_1": {
+        "PCB": "X7",
+        "PCBREV": "ZORRO",
+        "DEFAULT_MODE": "1",
+    },
+    "ZORRO_2": {
+        "PCB": "X7",
+        "PCBREV": "ZORRO",
+        "DEFAULT_MODE": "2",
+    },
+    "ZORRO-ELRS": {
+        "PCB": "X7",
+        "PCBREV": "ZORRO",
+        "DEFAULT_MODE": "2",
+        "INTERNAL_MODULE_ELRS": "YES",
+    },
+    "T8_1": {
+        "PCB": "X7",
+        "PCBREV": "T8",
+        "DEFAULT_MODE": "1",
+        "RADIOMASTER_RTF_RELEASE": "YES",
+    },
+    "T8_2": {
+        "PCB": "X7",
+        "PCBREV": "T8",
+        "DEFAULT_MODE": "2",
+        "RADIOMASTER_RTF_RELEASE": "YES",
+    },
 }
 
 translations = [

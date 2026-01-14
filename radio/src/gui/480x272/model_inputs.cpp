@@ -185,38 +185,11 @@ bool menuModelExpoOne(event_t event)
 
   drawFunction(expoFn, CURVE_CENTER_X, CURVE_CENTER_Y, CURVE_SIDE_WIDTH);
   drawCurveHorizontalScale();
-  drawCurveVerticalScale(CURVE_CENTER_X-CURVE_SIDE_WIDTH-15);
-
-  {
-    char textx[5];
-    char texty[5];
-    int x = getValue(ed->srcRaw);
-    if (ed->srcRaw >= MIXSRC_FIRST_TELEM) {
-      strAppendUnsigned(textx, calcRESXto100(x));
-      // TODO drawSensorCustomValue(LCD_W-8, 6*FH, ed->srcRaw - MIXSRC_FIRST_TELEM, x);
-      if (ed->scale > 0) x = (x * 1024) / convertTelemValue(ed->srcRaw - MIXSRC_FIRST_TELEM + 1, ed->scale);
-    }
-    else {
-      strAppendSigned(textx, calcRESXto100(x));
-    }
-
-    x = limit(-1024, x, 1024);
-    int y = limit<int>(-1024, expoFn(x), 1024);
-    strAppendSigned(texty, calcRESXto100(y));
-
-    x = divRoundClosest(x*CURVE_SIDE_WIDTH, RESX);
-    y = CURVE_CENTER_Y + getCurveYCoord(expoFn, x, CURVE_SIDE_WIDTH);
-
-    lcdDrawSolidFilledRect(CURVE_CENTER_X+x, CURVE_CENTER_Y-CURVE_SIDE_WIDTH, 2, 2*CURVE_SIDE_WIDTH+2, CURVE_CURSOR_COLOR);
-    lcdDrawSolidFilledRect(CURVE_CENTER_X-CURVE_SIDE_WIDTH-2, y-1, 2*CURVE_SIDE_WIDTH+2, 2, CURVE_CURSOR_COLOR);
-    lcdDrawBitmapPattern(CURVE_CENTER_X+x-4, y-4, LBM_CURVE_POINT, CURVE_CURSOR_COLOR);
-    lcdDrawBitmapPattern(CURVE_CENTER_X+x-4, y-4, LBM_CURVE_POINT_CENTER, TEXT_BGCOLOR);
-
-    int left = limit(CURVE_CENTER_X-CURVE_SIDE_WIDTH, CURVE_CENTER_X-CURVE_COORD_WIDTH/2+x, CURVE_CENTER_X+CURVE_SIDE_WIDTH-CURVE_COORD_WIDTH+2);
-    drawCurveCoord(left, CURVE_CENTER_Y+CURVE_SIDE_WIDTH+2, textx);
-    int top = limit(CURVE_CENTER_Y-CURVE_SIDE_WIDTH-1, -CURVE_COORD_HEIGHT/2+y, CURVE_CENTER_Y+CURVE_SIDE_WIDTH-CURVE_COORD_HEIGHT+1);
-    drawCurveCoord(CURVE_CENTER_X-CURVE_SIDE_WIDTH-37, top, texty);
-  }
+  drawCurveVerticalScale(CURVE_CENTER_X-CURVE_SIDE_WIDTH - 15);
+  // those parameters are global so that they can be reused in the curve edit screen
+  s_currSrcRaw = ed->srcRaw;
+  s_currScale = ed->scale;
+  drawCursor(expoFn);
 
   for (uint8_t k=0; k<NUM_BODY_LINES+1; k++) {
     int i = k + menuVerticalOffset;
@@ -243,7 +216,7 @@ bool menuModelExpoOne(event_t event)
         if (attr && menuHorizontalPosition==0)
           ed->srcRaw = checkIncDec(event, ed->srcRaw, INPUTSRC_FIRST, INPUTSRC_LAST, EE_MODEL|INCDEC_SOURCE|NO_INCDEC_MARKS, isSourceAvailableInInputs);
         if (ed->srcRaw >= MIXSRC_FIRST_TELEM) {
-          drawSensorCustomValue(EXPO_ONE_2ND_COLUMN+75, y, (ed->srcRaw - MIXSRC_FIRST_TELEM)/3, convertTelemValue(ed->srcRaw - MIXSRC_FIRST_TELEM + 1, ed->scale), LEFT|(menuHorizontalPosition==1?attr:0));
+          drawSensorCustomValue(EXPO_ONE_2ND_COLUMN+75, y, (ed->srcRaw - MIXSRC_FIRST_TELEM)/3, getValue(ed->srcRaw), LEFT|(menuHorizontalPosition==1?attr:0));
           if (attr && menuHorizontalPosition == 1) ed->scale = checkIncDec(event, ed->scale, 0, maxTelemValue(ed->srcRaw - MIXSRC_FIRST_TELEM + 1), EE_MODEL);
         }
         else if (attr) {
@@ -291,10 +264,10 @@ bool menuModelExpoOne(event_t event)
 
       case EXPO_FIELD_TRIM:
         uint8_t not_stick = (ed->srcRaw > MIXSRC_Ail);
-        int8_t carryTrim = -ed->carryTrim;
+        int8_t trimSource = -ed->trimSource;
         lcdDrawText(MENUS_MARGIN_LEFT, y, STR_TRIM);
-        lcdDrawTextAtIndex(EXPO_ONE_2ND_COLUMN, y, STR_VMIXTRIMS, (not_stick && carryTrim == 0) ? 0 : carryTrim+1, menuHorizontalPosition==0 ? attr : 0);
-        if (attr) ed->carryTrim = -checkIncDecModel(event, carryTrim, not_stick ? TRIM_ON : -TRIM_OFF, -TRIM_LAST);
+        lcdDrawTextAtIndex(EXPO_ONE_2ND_COLUMN, y, STR_VMIXTRIMS, (not_stick && trimSource == 0) ? 0 : trimSource + 1, menuHorizontalPosition == 0 ? attr : 0);
+        if (attr) ed->trimSource = -checkIncDecModel(event, trimSource, not_stick ? TRIM_ON : -TRIM_OFF, -TRIM_LAST);
         break;
     }
     y += FH;

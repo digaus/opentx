@@ -36,7 +36,9 @@ extern "C++" {
 
   typedef pthread_t RTOS_TASK_HANDLE;
   typedef pthread_mutex_t RTOS_MUTEX_HANDLE;
+
   typedef uint32_t RTOS_FLAG_HANDLE;
+
   typedef sem_t * RTOS_EVENT_HANDLE;
 
   extern uint64_t simuTimerMicros(void);
@@ -76,15 +78,25 @@ extern "C++" {
       pthread_mutex_unlock(&mutex);
   }
 
-  static inline void RTOS_CREATE_FLAG(uint32_t &flag)
+  static inline void RTOS_CREATE_FLAG(RTOS_FLAG_HANDLE flag)
   {
-    flag = 0; // TODO: real flags (use semaphores?)
   }
 
-  static inline void RTOS_SET_FLAG(uint32_t &flag)
+  static inline void RTOS_SET_FLAG(RTOS_FLAG_HANDLE flag)
   {
-    flag = 1;
   }
+
+  static inline void RTOS_CLEAR_FLAG(RTOS_FLAG_HANDLE flag)
+  {
+  }
+
+  static inline bool RTOS_WAIT_FLAG(RTOS_FLAG_HANDLE flag, uint32_t timeout)
+  {
+    simuSleep(timeout);
+    return false;
+  }
+
+  #define RTOS_ISR_SET_FLAG RTOS_SET_FLAG
 
   template<int SIZE>
   class FakeTaskStack
@@ -146,6 +158,7 @@ template<int SIZE>
   {
     return (uint32_t)(simuTimerMicros() / 1000);
   }
+
 #elif defined(RTOS_COOS)
 #ifdef __cplusplus
   extern "C" {
@@ -155,7 +168,7 @@ template<int SIZE>
   }
 #endif
 
-  #define RTOS_MS_PER_TICK              ((CFG_CPU_FREQ / CFG_SYSTICK_FREQ) / (CFG_CPU_FREQ / 1000))  // RTOS timer tick length in ms (currently 2)
+  #define RTOS_MS_PER_TICK              (1000 / CFG_SYSTICK_FREQ)  // RTOS timer tick length in ms (currently 1 for STM32, 2 for others)
 
   typedef OS_TID RTOS_TASK_HANDLE;
   typedef OS_MutexID RTOS_MUTEX_HANDLE;
@@ -188,6 +201,8 @@ template<int SIZE>
 
   #define RTOS_CREATE_TASK(taskId, task, name, stackStruct, stackSize, priority)   \
                                         taskId = CoCreateTask(task, NULL, priority, &stackStruct.stack[stackSize-1], stackSize)
+
+  #define RTOS_DEL_TASK(taskId) CoDelTask(taskId)
 
 #ifdef __cplusplus
   static inline void RTOS_CREATE_MUTEX(OS_MutexID &mutex)
@@ -230,6 +245,21 @@ template<int SIZE>
 
   #define RTOS_CREATE_FLAG(flag)        flag = CoCreateFlag(false, false)
   #define RTOS_SET_FLAG(flag)           (void)CoSetFlag(flag)
+  #define RTOS_CLEAR_FLAG(flag)         (void)CoClearFlag(flag)
+  #define RTOS_WAIT_FLAG(flag,timeout)  (CoWaitForSingleFlag(flag,timeout) == E_TIMEOUT)
+
+  static inline void RTOS_ISR_SET_FLAG(RTOS_FLAG_HANDLE flag)
+  {
+  #if !defined(INTERNAL_MODULE_CRSF)
+    CoEnterISR();
+    CoSchedLock();
+  #endif
+    isr_SetFlag(flag);
+  #if !defined(INTERNAL_MODULE_CRSF)
+    CoSchedUnlock();
+    CoExitISR();
+  #endif
+  }
 
 #ifdef __cplusplus
   template<int SIZE>

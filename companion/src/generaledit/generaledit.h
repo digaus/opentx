@@ -18,12 +18,13 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _GENERALEDIT_H_
-#define _GENERALEDIT_H_
+#pragma once
 
 #include <QtWidgets>
 #include "eeprominterface.h"
 #include "genericpanel.h"
+
+class CompoundItemModelFactory;
 
 namespace Ui {
   class GeneralEdit;
@@ -33,7 +34,7 @@ class GeneralPanel : public GenericPanel
 {
   public:
     GeneralPanel(QWidget *parent, GeneralSettings & generalSettings, Firmware * firmware):
-      GenericPanel(parent, NULL, generalSettings, firmware)
+      GenericPanel(parent, nullptr, generalSettings, firmware)
     {
     }
 };
@@ -56,7 +57,7 @@ class GeneralEdit : public QDialog
     void getGeneralSwitchDefPos(int i, bool val);
     void setSwitchDefPos();
     void updateVarioPitchRange();
-    
+
   signals:
     void modified();
 
@@ -71,7 +72,5 @@ class GeneralEdit : public QDialog
     QVector<GenericPanel *> panels;
     void addTab(GenericPanel *panel, QString text);
     void closeEvent(QCloseEvent *event);
-
+    CompoundItemModelFactory *editorItemModels;
 };
-
-#endif // _GENERALEDIT_H_

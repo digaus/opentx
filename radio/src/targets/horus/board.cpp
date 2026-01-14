@@ -137,6 +137,7 @@ void boardInit()
                          INTMODULE_RCC_APB1Periph |
                          EXTMODULE_RCC_APB1Periph |
                          I2C_RCC_APB1Periph |
+                         MIXER_SCHEDULER_TIMER_RCC_APB1Periph |
                          GPS_RCC_APB1Periph |
                          BACKLIGHT_RCC_APB1Periph,
                          ENABLE);
@@ -154,6 +155,15 @@ void boardInit()
                          GPS_RCC_APB2Periph |
                          BACKLIGHT_RCC_APB2Periph,
                          ENABLE);
+
+#if defined(RADIO_TX16S)
+  if (FLASH_OB_GetBOR() != OB_BOR_LEVEL3) {
+    FLASH_OB_Unlock();
+    FLASH_OB_BORConfig(OB_BOR_LEVEL3);
+    FLASH_OB_Launch();
+    FLASH_OB_Lock();
+  }
+#endif
 
   pwrInit();
   pwrOn();
@@ -265,7 +275,7 @@ void boardOff()
   #define BATTERY_DIVIDER 1495
 #else
   #define BATTERY_DIVIDER 1629
-#endif 
+#endif
 
 uint16_t getBatteryVoltage()
 {

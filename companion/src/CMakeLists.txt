@@ -332,7 +332,7 @@ endif()
 
 # Generate list of simulator plugins, used by all platforms
 if(WIN32)
-  file(GLOB simulator_plugins "${CMAKE_BINARY_DIR}/Release/*opentx-*simulator${CMAKE_SHARED_LIBRARY_SUFFIX}")
+  file(GLOB simulator_plugins "${CMAKE_BINARY_DIR}/*opentx-*simulator${CMAKE_SHARED_LIBRARY_SUFFIX}")
 else()
   file(GLOB simulator_plugins "${CMAKE_BINARY_DIR}/*opentx-*simulator${CMAKE_SHARED_LIBRARY_SUFFIX}")
 endif()
@@ -343,6 +343,20 @@ if(PCB STREQUAL X7 AND PCBREV STREQUAL ACCESS)
   set(FLAVOUR x7access)
 elseif(PCB STREQUAL X7 AND PCBREV STREQUAL T12)
   set(FLAVOUR t12)
+elseif(PCB STREQUAL X7 AND PCBREV STREQUAL TLITE)
+  set(FLAVOUR tlite)
+elseif(PCB STREQUAL X7 AND PCBREV STREQUAL TPRO)
+  set(FLAVOUR tpro)
+elseif(PCB STREQUAL X7 AND PCBREV STREQUAL TX12)
+  set(FLAVOUR tx12)
+elseif(PCB STREQUAL X7 AND PCBREV STREQUAL ZORRO)
+  set(FLAVOUR zorro)
+elseif(PCB STREQUAL X7 AND PCBREV STREQUAL T8)
+  set(FLAVOUR t8)
+elseif(PCB STREQUAL TANGO)
+  set(FLAVOUR tango)
+elseif(PCB STREQUAL MAMBO)
+  set(FLAVOUR mambo)
 elseif(PCB STREQUAL X9D+ AND PCBREV STREQUAL 2019)
   set(FLAVOUR x9d+2019)
 elseif(PCB STREQUAL X10 AND PCBREV STREQUAL EXPRESS)
@@ -355,14 +369,6 @@ elseif(PCB STREQUAL X10 AND PCBREV STREQUAL T18)
   set(FLAVOUR t18)
 else()
   string(TOLOWER ${PCB} FLAVOUR)
-endif()
-if(POLICY CMP0026)
-  cmake_policy(SET CMP0026 OLD)  # https://cmake.org/cmake/help/v3.0/policy/CMP0026.html
-endif()
-
-if(SIMU_TARGET)
-  get_property(current_plugin TARGET opentx-${FLAVOUR}-simulator PROPERTY LOCATION)
-  list(APPEND simulator_plugins "${current_plugin}")
 endif()
 
 if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
@@ -391,20 +397,20 @@ if(${CMAKE_SYSTEM_NAME} MATCHES "Linux")
   set(OperatingSystem "Linux")
 
 elseif(WIN32)
+  set(INSTALL_DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}")
   if(NOT WIN_DO_FULL_INSTALL)
     # Just copy supporting DLLs to build folder
-    set(INSTALL_DESTINATION "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}")
     message(STATUS "Partial install to " ${INSTALL_DESTINATION})
   else()
     # Full Windows installation with all supporting files
-    set(INSTALL_DESTINATION "${CMAKE_INSTALL_PREFIX}")
     message(STATUS "Full install to " ${INSTALL_DESTINATION})
     # companion & simulator binaries
     install(TARGETS ${COMPANION_NAME} DESTINATION ${INSTALL_DESTINATION})
     install(TARGETS ${SIMULATOR_NAME} DESTINATION ${INSTALL_DESTINATION})
-    install(FILES ${simulator_plugins} DESTINATION "${INSTALL_DESTINATION}")
+    # simulator dlls
+    install(FILES ${simulator_plugins} DESTINATION ${INSTALL_DESTINATION})
     # supporting utilities
-    set(INSTALL_TEMP_FILES dfu-util.exe libusb0.dll libusb-1.0.dll license.txt)
+    set(INSTALL_TEMP_FILES dfu-util.exe libusb0.dll libusb-1.0.dll libcrypto-1_1.dll libssl-1_1.dll license.txt)
     foreach(tmpfile ${INSTALL_TEMP_FILES})
       install(FILES "${COMPANION_SRC_DIRECTORY}/../targets/windows/${tmpfile}" DESTINATION ${INSTALL_DESTINATION})
     endforeach()
@@ -413,41 +419,27 @@ elseif(WIN32)
   # Qt dlls (using windeployqt)
   ## Qt translations are already packaged into our custom qrc. Also don't need software rendering engines.
   set(wdqtopts --no-translations --no-opengl-sw --no-system-d3d-compiler --no-angle)
-  if(CMAKE_BUILD_TYPE STREQUAL "Release")
-    set(wdqtopts ${wdqtopts} --release)  # release builds aren't always properly detected with mingw
-  endif()
   if(MSVC)
     set(wdqtopts ${wdqtopts} --no-compiler-runtime)  # --compiler-runtime includes vcredist_x86, but we just copy the required DLLs manually
   endif()
-  set(wdqtopts ${wdqtopts} -dir "\"${INSTALL_DESTINATION}\"" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/${COMPANION_NAME}.exe" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/Release/${SIMULATOR_NAME}.exe")
-
-  # Add installer command to execute windeployqt
-  message(STATUS "windeployqt command: ${QT_BIN_DIR}/windeployqt.exe ${wdqtopts}")
+  set(wdqtopts ${wdqtopts} -dir "\"${INSTALL_DESTINATION}\"" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}/${COMPANION_NAME}.exe" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/${CMAKE_BUILD_TYPE}/${SIMULATOR_NAME}.exe")
+  list(JOIN wdqtopts " " wdqtopts)
+  # message(STATUS "windeployqt command: ${QT_BIN_DIR}/windeployqt.exe ${wdqtopts}")
   install(CODE "execute_process(COMMAND \"${QT_BIN_DIR}/windeployqt.exe\" ${wdqtopts})")
 
   # SDL dll
-  if(SDL_FOUND AND EXISTS "${SDL_LIBRARY_PATH}/SDL.dll")
-    set(SDL_DIR ${SDL_LIBRARY_PATH})  # this is also used by NSIS installer script
-    install(FILES ${SDL_DIR}/SDL.dll DESTINATION ${INSTALL_DESTINATION})
-  elseif(SDL_FOUND)
-    message(WARNING "Installer: SDL.dll not found, set SDL_LIBRARY_PATH manually.")
-  endif()
-
-  # libeay (SSL) dlls  (used by QtNetwork) -- not strictly required but avoids possible issues with downloads and Qt warnings.
-  file(TO_CMAKE_PATH "$ENV{PROGRAMFILES}" WIN_PROGRAM_FILES)
-  find_path(EAY_LIB_DIR libeay32.dll HINTS
-    "${WIN_PROGRAM_FILES}/OpenSSL" "${WIN_PROGRAM_FILES}/OpenSSL-Win32"
-    "C:/OpenSSL/" "C:/OpenSSL-Win32/"
-    "${WIN_EXTRA_LIBS_PATH}" "${WIN_EXTRA_LIBS_PATH}/OpenSSL" "${WIN_EXTRA_LIBS_PATH}/OpenSSL-Win32"
+  find_path(SDL_LIB_DIR SDL.dll HINTS
+    "${SDL_LIBRARY_PATH}"
+    "${WIN_EXTRA_LIBS_PATH}"
     "${MINGW_DIR}/../opt/bin"
     "${PYTHON_DIRECTORY}/lib/site-packages/PyQt4"
     PATH_SUFFIXES bin
-    DOC "Path to libeay32.dll and ssleay32.dll (OpenSSL)"
+    DOC "Path to SDL.dll"
   )
-  if (EAY_LIB_DIR)
-    install(FILES "${EAY_LIB_DIR}/libeay32.dll" "${EAY_LIB_DIR}/ssleay32.dll" DESTINATION ${INSTALL_DESTINATION} OPTIONAL)
+  if(SDL_LIB_DIR)
+    install(FILES ${SDL_LIB_DIR}/SDL.dll DESTINATION ${INSTALL_DESTINATION})
   else()
-    message(WARNING "Installer: SSL libs not found, set EAY_LIB_DIR manually.")
+    message(WARNING "Installer: SDL.dll not found, set SDL_LIB_DIR manually.")
   endif()
 
   # C++/system dlls, depends on compiler
@@ -513,6 +505,8 @@ IF(APPLE)
   # Use a non standard Info.plist that adds Retina support flags
   set_target_properties(${COMPANION_NAME} PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${PROJECT_SOURCE_DIR}/companion/targets/mac/MacOSXBundleInfo.plist.in)
   set_target_properties(${SIMULATOR_NAME} PROPERTIES MACOSX_BUNDLE_INFO_PLIST ${PROJECT_SOURCE_DIR}/companion/targets/mac/MacOSXBundleInfo.plist.in)
+  
+  set(MACOSX_BUNDLE_GUI_IDENTIFIER "org.opentx.companion")
 
   INSTALL(TARGETS ${COMPANION_NAME}
       BUNDLE DESTINATION . COMPONENT Runtime

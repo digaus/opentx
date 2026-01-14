@@ -41,7 +41,7 @@ void processGetHardwareInfoFrame(uint8_t module, const uint8_t * frame)
       POPUP_WARNING(STR_MODULE_UPGRADE_ALERT);
     }
   }
-  else if (index < PXX2_MAX_RECEIVERS_PER_MODULE && modelId < DIM(PXX2ReceiversNames)) {
+  else if (index < PXX2_MAX_RECEIVERS_PER_MODULE) {
     memcpy(&destination->receivers[index].information, &frame[4], length);
     destination->receivers[index].timestamp = get_tmr10ms();
     if (destination->receivers[index].information.capabilities & ~((1 << RECEIVER_CAPABILITY_COUNT) - 1))
@@ -91,6 +91,12 @@ void processReceiverSettingsFrame(uint8_t module, const uint8_t * frame)
 
   if (frame[4] & PXX2_RX_SETTINGS_FLAG1_ENABLE_PWM_CH5_CH6)
     destination->enablePwmCh5Ch6 = 1;
+
+  if (frame[4] & PXX2_RX_SETTINGS_FLAG1_FPORT2)
+    destination->fport2 = 1;
+
+  if (frame[4] & PXX2_RX_SETTINGS_FLAG1_SBUS24)  
+    destination->sbus24 = 1;
 
   uint8_t outputsCount = min<uint8_t>(16, frame[0] - 4);
   destination->outputsCount = outputsCount;

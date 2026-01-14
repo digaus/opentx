@@ -18,12 +18,13 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _HELI_H_
-#define _HELI_H_
+#pragma once
 
 #include "modeledit.h"
 
-class RawSourceFilterItemModel;
+class CompoundItemModelFactory;
+class FilteredItemModelFactory;
+class FilteredItemModel;
 
 namespace Ui {
   class Heli;
@@ -34,17 +35,17 @@ class HeliPanel : public ModelPanel
     Q_OBJECT
 
   public:
-    HeliPanel(QWidget *parent, ModelData & model, GeneralSettings & generalSettings, Firmware * firmware);
-    ~HeliPanel();
+    HeliPanel(QWidget *parent, ModelData & model, GeneralSettings & generalSettings, Firmware * firmware, CompoundItemModelFactory * sharedItemModels);
+    virtual ~HeliPanel();
     void update();
 
   private slots:
-    void updateDataModels();
     void edited();
+    void onItemModelAboutToBeUpdated();
+    void onItemModelUpdateComplete();
 
   private:
     Ui::Heli *ui;
-    RawSourceFilterItemModel * rawSourceItemModel;
+    FilteredItemModelFactory * tabFilteredModels;
+    void connectItemModelEvents(const FilteredItemModel * itemModel);
 };
-
-#endif // _HELI_H_

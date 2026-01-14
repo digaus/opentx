@@ -64,13 +64,8 @@ void menuModelFlightModeOne(event_t event)
   drawFlightMode(13*FW, 0, s_currIdx+1, (getFlightMode()==s_currIdx ? BOLD : 0));
 
 #if defined(GVARS) && !defined(GVARS_IN_CURVES_SCREEN)
-#if defined(PCBTARANIS)
   #define VERTICAL_SHIFT  (ITEM_MODEL_FLIGHT_MODE_FADE_IN-ITEM_MODEL_FLIGHT_MODE_TRIMS)
   static const uint8_t mstate_tab_fm1[]  = {0, 3, 0, 0, (uint8_t)-1, 1, 1, 1, 1, 1, 1};
-#else
-  #define VERTICAL_SHIFT  (ITEM_MODEL_FLIGHT_MODE_FADE_IN-ITEM_MODEL_FLIGHT_MODE_SWITCH)
-  static const uint8_t mstate_tab_fm1[]  = {0, 0, 0, (uint8_t)-1, 1, 1, 1, 1, 1};
-#endif
   static const uint8_t mstate_tab_others[]  = {0, 0, 3, 0, 0, (uint8_t)-1, 2, 2, 2, 2, 2};
 
   check(event, 0, NULL, 0, (s_currIdx == 0) ? mstate_tab_fm1 : mstate_tab_others, DIM(mstate_tab_others)-1, ITEM_MODEL_FLIGHT_MODE_MAX - HEADER_LINE - (s_currIdx==0 ? (ITEM_MODEL_FLIGHT_MODE_FADE_IN-ITEM_MODEL_FLIGHT_MODE_SWITCH-1) : 0));
@@ -250,7 +245,7 @@ void menuModelFlightModesAll(event_t event)
     }
   }
 
-  if (menuVerticalOffset != MAX_FLIGHT_MODES-(LCD_LINES-2)) return;
+  if (menuVerticalOffset < (uint16_t)(MAX_FLIGHT_MODES - (LCD_LINES - 2))) return;
 
   lcdDrawTextAlignedLeft((LCD_LINES-1)*FH+1, STR_CHECKTRIMS);
   drawFlightMode(OFS_CHECKTRIMS, (LCD_LINES-1)*FH+1, mixerCurrentFlightMode+1);

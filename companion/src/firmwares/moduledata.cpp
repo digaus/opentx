@@ -26,7 +26,29 @@
 
 void ModuleData::convert(RadioDataConversionState & cstate)
 {
-  if (protocol == PULSES_PXX_R9M && (IS_TARANIS_XLITE(cstate.fromType) || IS_TARANIS_XLITE(cstate.toType))) {
+  Firmware *fw = getCurrentFirmware();
+
+  cstate.setSubComp(indexToString(cstate.subCompIdx, fw));
+  cstate.setItemType("Protocol", 1);
+  RadioDataConversionState::EventType evt = RadioDataConversionState::EVT_NONE;
+  RadioDataConversionState::LogField oldData(protocol, protocolToString(protocol));
+
+  if (fw->getBoard() == cstate.toType) {
+    if (cstate.subCompIdx < fw->getCapability(NumFirstUsableModule) || cstate.subCompIdx > fw->getCapability(NumModules) - 1) {
+      if ((PulsesProtocol) protocol != PULSES_OFF)
+        evt = RadioDataConversionState::EVT_INV;
+    }
+    else if (!fw->isAvailable((PulsesProtocol) protocol, cstate.subCompIdx)) {
+      evt = RadioDataConversionState::EVT_INV;
+    }
+  }
+  else {
+    evt = RadioDataConversionState::EVT_INV;
+    qDebug() << "Error - current firmware board does not match conversion to board!";
+  }
+
+  if (evt == RadioDataConversionState::EVT_INV) {
+    cstate.setInvalid(oldData);
     clear();
   }
 }
@@ -45,19 +67,6 @@ bool ModuleData::isPxx2Module() const
   }
 }
 
-bool ModuleData::isPxx1Module() const
-{
-  switch(protocol){
-    case PULSES_PXX_XJT_X16:
-    case PULSES_PXX_R9M:
-    case PULSES_PXX_R9M_LITE:
-    case PULSES_PXX_R9M_LITE_PRO:
-      return true;
-    default:
-      return false;
-  }
-}
-
 bool ModuleData::supportRxNum() const
 {
   switch (protocol) {
@@ -66,6 +75,7 @@ bool ModuleData::supportRxNum() const
     case PULSES_PXX_R9M_LITE:
     case PULSES_PXX_R9M_LITE_PRO:
     case PULSES_MULTIMODULE:
+    case PULSES_CROSSFIRE:
     case PULSES_ACCESS_ISRM:
     case PULSES_ACCST_ISRM_D16:
     case PULSES_ACCESS_R9M:
@@ -160,7 +170,8 @@ QString ModuleData::protocolToString(unsigned protocol)
     "FrSky ACCESS R9M Lite",
     "FrSky ACCESS R9M Lite Pro",
     "FrSky XJT lite (D16)", "FrSky XJT lite (D8)", "FrSky XJT lite (LR12)",
-    "AFHDS3"
+    "AFHDS3",
+    "ImmersionRC Ghost"
   };
 
   return CHECK_IN_ARRAY(strings, protocol);
@@ -221,6 +232,7 @@ int ModuleData::getMaxChannelCount()
     case PULSES_XJT_LITE_X16:
     case PULSES_PXX_XJT_X16:
     case PULSES_CROSSFIRE:
+    case PULSES_GHOST:
     case PULSES_SBUS:
     case PULSES_PPM:
       return 16;

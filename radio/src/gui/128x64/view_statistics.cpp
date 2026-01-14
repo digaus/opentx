@@ -19,6 +19,7 @@
  */
 
 #include "opentx.h"
+#include "mixer_scheduler.h"
 
 #define STATS_1ST_COLUMN               1
 #define STATS_2ND_COLUMN               7*FW+FW/2
@@ -31,14 +32,21 @@ void menuStatisticsView(event_t event)
 
   switch (event) {
     case EVT_KEY_FIRST(KEY_UP):
-#if defined(NAVIGATION_X7)
+#if defined(KEYS_GPIO_REG_PAGEDN)
+    case EVT_KEY_BREAK(KEY_PAGEDN):
+#elif defined(NAVIGATION_X7)
     case EVT_KEY_BREAK(KEY_PAGE):
 #endif
+
       chainMenu(menuStatisticsDebug);
       break;
 
     case EVT_KEY_FIRST(KEY_DOWN):
-#if defined(NAVIGATION_X7)
+#if defined(KEYS_GPIO_REG_PAGEUP)
+    case EVT_KEY_BREAK(KEY_PAGEUP):
+      killEvents(event);
+      chainMenu(menuStatisticsDebug2);
+#elif defined(NAVIGATION_X7)
     case EVT_KEY_LONG(KEY_PAGE):
       killEvents(event);
       chainMenu(menuStatisticsDebug2);
@@ -133,7 +141,12 @@ void menuStatisticsDebug(event_t event)
       break;
 
     case EVT_KEY_FIRST(KEY_UP):
-#if defined(NAVIGATION_X7)
+#if defined(KEYS_GPIO_REG_PAGEDN)
+    case EVT_KEY_BREAK(KEY_PAGEDN):
+      disableVBatBridge();
+      chainMenu(menuStatisticsDebug2);
+      break;
+#elif defined(NAVIGATION_X7)
     case EVT_KEY_BREAK(KEY_PAGE):
       disableVBatBridge();
       chainMenu(menuStatisticsDebug2);
@@ -141,7 +154,9 @@ void menuStatisticsDebug(event_t event)
 #endif
 
     case EVT_KEY_FIRST(KEY_DOWN):
-#if defined(NAVIGATION_X7)
+#if defined(KEYS_GPIO_REG_PAGEUP)
+    case EVT_KEY_BREAK(KEY_PAGEUP):
+#elif defined(NAVIGATION_X7)
     case EVT_KEY_LONG(KEY_PAGE):
 #endif
       killEvents(event);
@@ -249,6 +264,13 @@ void menuStatisticsDebug(event_t event)
   y += FH;
 #endif
 
+#if defined(INTERNAL_MODULE_CRSF)
+  lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, crossfireStack.available(), LEFT);
+  lcdDrawText(lcdLastRightPos, y, "/");
+  lcdDrawNumber(lcdLastRightPos, y, systemStack.available(), LEFT);
+  y += FH;
+#endif
+
   lcdDrawText(LCD_W/2, 7*FH+1, STR_MENUTORESET, CENTERED);
   lcdInvertLastLine();
 }
@@ -264,14 +286,18 @@ void menuStatisticsDebug2(event_t event)
       break;
 
     case EVT_KEY_FIRST(KEY_UP):
-#if defined(NAVIGATION_X7)
+#if defined(KEYS_GPIO_REG_PAGEDN)
+    case EVT_KEY_BREAK(KEY_PAGEDN):
+#elif defined(NAVIGATION_X7)
     case EVT_KEY_BREAK(KEY_PAGE):
 #endif
       chainMenu(menuStatisticsView);
       return;
 
     case EVT_KEY_FIRST(KEY_DOWN):
-#if defined(NAVIGATION_X7)
+#if defined(KEYS_GPIO_REG_PAGEUP)
+    case EVT_KEY_BREAK(KEY_PAGEUP):
+#elif defined(NAVIGATION_X7)
     case EVT_KEY_LONG(KEY_PAGE):
 #endif
       killEvents(event);
@@ -286,13 +312,32 @@ void menuStatisticsDebug2(event_t event)
   uint8_t y = FH + 1;
 
   lcdDrawTextAlignedLeft(y, "Tlm RX Err");
-  lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, telemetryErrors, RIGHT);
+  lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, telemetryErrors);
   y += FH;
-
+#if defined(DEBUG)
+  lcdDrawTextAlignedLeft(y, "SD Card");
+  lcdDrawText(MENU_DEBUG_COL1_OFS, y, SD_CARD_PRESENT() ? "Inserted" : "Not inserted");
+  y += FH;
+#endif
 #if defined(BLUETOOTH)
   lcdDrawTextAlignedLeft(y, "BT status");
   lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, IS_BLUETOOTH_CHIP_PRESENT(), RIGHT);
   y += FH;
+#endif
+
+#if defined(INTERNAL_MODULE_ELRS)
+  if (isModuleCrossfire(INTERNAL_MODULE)) {
+    lcdDrawTextAlignedLeft(y, STR_LINK_SPEED);
+    lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, ELRS_INTERNAL_BAUDRATE / 10000, PREC2);
+    lcdDrawText(lcdNextPos, y, "MBps", 0);
+    y += FH;
+    lcdDrawTextAlignedLeft(y, STR_PULSE_RATE);
+    lcdDrawNumber(MENU_DEBUG_COL1_OFS, y, getMixerSchedulerPeriod() / 1000, LEFT);
+    lcdDrawText(lcdNextPos, y, "ms (");
+    lcdDrawNumber(lcdNextPos, y, 1000000 / getMixerSchedulerPeriod(), LEFT);
+    lcdDrawText(lcdNextPos, y, "Hz)");
+    y += FH;
+  }
 #endif
 
   lcdDrawText(LCD_W/2, 7*FH+1, STR_MENUTORESET, CENTERED);

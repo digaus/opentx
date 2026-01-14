@@ -20,7 +20,7 @@
 
 #include "opentx.h"
 
-#if defined(RADIO_T12)
+#if defined(RADIO_FAMILY_JUMPER_T12) || defined(RADIO_TX12) || defined(RADIO_ZORRO) || defined(RADIO_T8) || defined(RADIO_TPRO)
   #define LCD_CONTRAST_OFFSET            -10
 #else
   #define LCD_CONTRAST_OFFSET            160
@@ -44,12 +44,12 @@ void lcdWriteCommand(uint8_t byte)
 {
   LCD_A0_LOW();
   LCD_NCS_LOW();
-  while ((SPI3->SR & SPI_SR_TXE) == 0) {
+  while ((LCD_SPI->SR & SPI_SR_TXE) == 0) {
     // Wait
   }
-  (void)SPI3->DR; // Clear receive
+  (void)LCD_SPI->DR; // Clear receive
   LCD_SPI->DR = byte;
-  while ((SPI3->SR & SPI_SR_RXNE) == 0) {
+  while ((LCD_SPI->SR & SPI_SR_RXNE) == 0) {
     // Wait
   }
   LCD_NCS_HIGH();
@@ -107,8 +107,8 @@ void lcdHardwareInit()
 #if LCD_W == 128
 void lcdStart()
 {
-#if defined(RADIO_T12)
-  // Jumper has the screen inverted.
+#if defined(LCD_VERTICAL_INVERT)
+  // T12 and TX12 have the screen inverted.
   lcdWriteCommand(0xe2); // (14) Soft reset
   lcdWriteCommand(0xa0); // Set seg
   lcdWriteCommand(0xc8); // Set com
@@ -134,6 +134,11 @@ void lcdStart()
   lcdWriteCommand(0x36); // Set Vop
   lcdWriteCommand(0xa6); // Set display mode
 #endif
+#if defined(BOOT)
+  lcdSetRefVolt(LCD_CONTRAST_DEFAULT);
+#else
+  lcdSetRefVolt(g_eeGeneral.contrast);
+#endif
 }
 #else
 void lcdStart()
@@ -144,9 +149,9 @@ void lcdStart()
   lcdWriteCommand(0xE9); // Set bias=1/10
   lcdWriteCommand(0x81); // Set Vop
 #if defined(BOOT)
-  lcdWriteCommand(LCD_CONTRAST_OFFSET+LCD_CONTRAST_DEFAULT);
+  lcdWriteCommand(LCD_CONTRAST_OFFSET + LCD_CONTRAST_DEFAULT);
 #else
-  lcdWriteCommand(LCD_CONTRAST_OFFSET+g_eeGeneral.contrast);
+  lcdWriteCommand(LCD_CONTRAST_OFFSET + g_eeGeneral.contrast);
 #endif
   lcdWriteCommand(0xA2); // Set line rate: 28KLPS
   lcdWriteCommand(0x28); // Set panel loading
@@ -173,11 +178,11 @@ void lcdStart()
 
 void lcdWriteAddress(uint8_t x, uint8_t y)
 {
-  lcdWriteCommand(x & 0x0F); // Set Column Address LSB CA[3:0]
-  lcdWriteCommand((x>>4) | 0x10); // Set Column Address MSB CA[7:4]
+  lcdWriteCommand(x & 0x0Fu); // Set Column Address LSB CA[3:0]
+  lcdWriteCommand((x >> 4u) | 0x10u); // Set Column Address MSB CA[7:4]
 
-  lcdWriteCommand((y&0x0F) | 0x60); // Set Row Address LSB RA [3:0]
-  lcdWriteCommand(((y>>4) & 0x0F) | 0x70); // Set Row Address MSB RA [7:4]
+  lcdWriteCommand((y & 0x0Fu) | 0x60u); // Set Row Address LSB RA [3:0]
+  lcdWriteCommand(((y >> 4u) & 0x0Fu) | 0x70u); // Set Row Address MSB RA [7:4]
 }
 #endif
 
@@ -201,7 +206,7 @@ void lcdRefresh(bool wait)
   for (uint8_t y=0; y < 8; y++, p+=LCD_W) {
     lcdWriteCommand(0x10); // Column addr 0
     lcdWriteCommand(0xB0 | y); // Page addr y
-#if !defined(RADIO_T12)
+#if !defined(LCD_VERTICAL_INVERT)
     lcdWriteCommand(0x04);
 #endif
 

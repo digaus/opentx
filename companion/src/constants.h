@@ -43,6 +43,7 @@
 #define CPN_MAX_POTS                   (CPN_MAX_KNOBS + CPN_MAX_SLIDERS)
 #define CPN_MAX_CYC                    3
 #define CPN_MAX_SWITCHES               32
+#define CPN_MAX_FUNCTION_SWITCHES      6
 #define CPN_MAX_MOUSE_ANALOGS          2
 #define CPN_MAX_GYRO_ANALOGS           2
 #define CPN_MAX_ANALOGS                (CPN_MAX_STICKS + CPN_MAX_POTS + CPN_MAX_MOUSE_ANALOGS + CPN_MAX_GYRO_ANALOGS)
@@ -71,10 +72,13 @@
 #define CPN_STR_APP_SETTINGS_FILTER    CPN_STR_APP_SETTINGS_FILES % " (*.ini)"
 
 #define CPN_STR_UNKNOWN_ITEM           "???"
+#define CPN_STR_NONE_ITEM              "----"
 
 #define CPN_STR_SW_INDICATOR_UP        QCoreApplication::translate("RawSwitch", "\xE2\x86\x91")  // Switch up position indicator: Up arrow, or similar.
 #define CPN_STR_SW_INDICATOR_DN        QCoreApplication::translate("RawSwitch", "\xE2\x86\x93")  // Switch down position indicator: Down arrow, or similar.
 #define CPN_STR_SW_INDICATOR_NEUT      QCoreApplication::translate("RawSwitch", "-")             // Switch neutral (middle) position indicator.
 #define CPN_STR_SW_INDICATOR_REV       QCoreApplication::translate("RawSwitch", "!")             // Switch reversed logic (NOT) indicator.
+
+#define OPENTX_HOME_PAGE_URL           "http://www.open-tx.org"
 
 #endif // _CONSTANTS_H_

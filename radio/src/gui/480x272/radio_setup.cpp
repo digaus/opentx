@@ -84,6 +84,7 @@ enum menuRadioSetupItems {
   ITEM_SETUP_SWITCHES_DELAY,
   ITEM_SETUP_USB_MODE,
   ITEM_SETUP_RX_CHANNEL_ORD,
+  CASE_ROTARY_ENCODER(ITEM_RADIO_SETUP_ROTARY_INVERSE)
   ITEM_SETUP_STICK_MODE,
   ITEM_SETUP_MAX
 };
@@ -139,6 +140,7 @@ bool menuRadioSetup(event_t event)
     0, // switches delay
     0, // USB mode
     0, // RX channels order
+    CASE_ROTARY_ENCODER(0)  // Invert rotary encoder
     0, // sticks mode
     1 /*to force edit mode*/
   }); // Units - Fai choice - Play delay - USB mode - Chan order - Mode (1 to 4)
@@ -250,7 +252,7 @@ bool menuRadioSetup(event_t event)
         break;
 
       case ITEM_SETUP_BEEP_MODE:
-        lcdDrawText(MENUS_MARGIN_LEFT, y, STR_SPEAKER);
+        lcdDrawText(MENUS_MARGIN_LEFT + INDENT_WIDTH, y, STR_SPEAKER);
         g_eeGeneral.beepMode = editChoice(RADIO_SETUP_2ND_COLUMN, y, STR_VBEEPMODE, g_eeGeneral.beepMode, -2, 1, attr, event);
         break;
 
@@ -280,7 +282,7 @@ bool menuRadioSetup(event_t event)
         break;
 
       case ITEM_SETUP_SPEAKER_PITCH:
-        lcdDrawText(MENUS_MARGIN_LEFT,  y, STR_SPKRPITCH);
+        lcdDrawText(MENUS_MARGIN_LEFT, y, STR_SPKRPITCH);
         lcdDrawNumber(RADIO_SETUP_2ND_COLUMN, y, g_eeGeneral.speakerPitch*15, attr|LEFT, 0, "+", "Hz");
         if (attr) {
           CHECK_INCDEC_GENVAR(event, g_eeGeneral.speakerPitch, 0, 20);
@@ -292,7 +294,7 @@ bool menuRadioSetup(event_t event)
         lcdDrawText(MENUS_MARGIN_LEFT, y, STR_VARIO);
         break;
       case ITEM_SETUP_VARIO_VOLUME:
-        lcdDrawText(MENUS_MARGIN_LEFT, y, TR_SPEAKER_VOLUME);
+        lcdDrawText(MENUS_MARGIN_LEFT, y, STR_SPEAKER_VOLUME);
         g_eeGeneral.varioVolume = editSlider(RADIO_SETUP_2ND_COLUMN, y, event, g_eeGeneral.varioVolume, -2, +2, attr);
         break;
       case ITEM_SETUP_VARIO_PITCH:
@@ -318,7 +320,7 @@ bool menuRadioSetup(event_t event)
         break;
 
       case ITEM_SETUP_HAPTIC_MODE:
-        lcdDrawText(MENUS_MARGIN_LEFT, y, STR_MODE);
+        lcdDrawText(MENUS_MARGIN_LEFT + INDENT_WIDTH, y, STR_MODE);
         g_eeGeneral.hapticMode = editChoice(RADIO_SETUP_2ND_COLUMN, y, STR_VBEEPMODE, g_eeGeneral.hapticMode, -2, 1, attr, event);
         break;
 
@@ -371,7 +373,7 @@ bool menuRadioSetup(event_t event)
       }
 
       case ITEM_SETUP_INACTIVITY_ALARM:
-        lcdDrawText(MENUS_MARGIN_LEFT,  y,STR_INACTIVITYALARM);
+        lcdDrawText(MENUS_MARGIN_LEFT, y, STR_INACTIVITYALARM);
         lcdDrawNumber(RADIO_SETUP_2ND_COLUMN, y, g_eeGeneral.inactivityTimer, attr|LEFT, 0, NULL, "m");
         if (attr) g_eeGeneral.inactivityTimer = checkIncDec(event, g_eeGeneral.inactivityTimer, 0, 250, EE_GENERAL); //0..250minutes
         break;
@@ -381,7 +383,7 @@ bool menuRadioSetup(event_t event)
         break;
 
       case ITEM_SETUP_BACKLIGHT_MODE:
-        lcdDrawText(MENUS_MARGIN_LEFT + INDENT_WIDTH , y, STR_MODE);
+        lcdDrawText(MENUS_MARGIN_LEFT + INDENT_WIDTH, y, STR_MODE);
         g_eeGeneral.backlightMode = editChoice(RADIO_SETUP_2ND_COLUMN, y, STR_VBLMODE, g_eeGeneral.backlightMode, e_backlight_mode_off, e_backlight_mode_on, attr, event);
         break;
 
@@ -414,7 +416,7 @@ bool menuRadioSetup(event_t event)
 
 #if defined(KEYS_BACKLIGHT_GPIO)
       case ITEM_SETUP_KEYS_BACKLIGHT:
-        lcdDrawText(MENUS_MARGIN_LEFT + INDENT_WIDTH , y, STR_KEYS_BACKLIGHT);
+        lcdDrawText(MENUS_MARGIN_LEFT + INDENT_WIDTH, y, STR_KEYS_BACKLIGHT);
         g_eeGeneral.keysBacklight = editCheckBox(g_eeGeneral.keysBacklight, RADIO_SETUP_2ND_COLUMN, y, attr, event ) ;
         break;
 #endif
@@ -533,6 +535,13 @@ bool menuRadioSetup(event_t event)
         }
         break;
       }
+
+#if defined(ROTARY_ENCODER_NAVIGATION)
+      case ITEM_RADIO_SETUP_ROTARY_INVERSE:
+        lcdDrawText(MENUS_MARGIN_LEFT, y, STR_INVERT_ROTARY);
+        g_eeGeneral.rotEncDirection = editCheckBox(g_eeGeneral.rotEncDirection, RADIO_SETUP_2ND_COLUMN, y, attr, event);
+        break;
+#endif
     }
   }
 

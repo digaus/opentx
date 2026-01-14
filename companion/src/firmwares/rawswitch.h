@@ -34,6 +34,7 @@ class RadioDataConversionState;
 enum RawSwitchType {
   SWITCH_TYPE_NONE,
   SWITCH_TYPE_SWITCH,
+  SWITCH_TYPE_FUNCTIONSWITCH,
   SWITCH_TYPE_VIRTUAL,
   SWITCH_TYPE_MULTIPOS_POT,
   SWITCH_TYPE_TRIM,
@@ -89,6 +90,7 @@ class RawSwitch {
     bool isAvailable(const ModelData * const model = NULL, const GeneralSettings * const gs = NULL, Board::Type board = Board::BOARD_UNKNOWN) const;
     bool isSet() const { return type != SWITCH_TYPE_NONE || index != 0; }
     void clear() { type = SWITCH_TYPE_NONE; index = 0; }
+    QStringList getSwitchList(Boards board) const;
 
     bool operator== ( const RawSwitch& other) const {
       return (this->type == other.type) && (this->index == other.index);

@@ -18,8 +18,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _OPENTX_H_
-#define _OPENTX_H_
+#pragma once
 
 #include <stdlib.h>
 #include "definitions.h"
@@ -68,6 +67,12 @@
 #define CASE_GYRO(x) x,
 #else
 #define CASE_GYRO(x)
+#endif
+
+#if defined(BACKLIGHT_GPIO)
+#define CASE_BACKLIGHT(x) x,
+#else
+#define CASE_BACKLIGHT(x)
 #endif
 
 #if defined(LUA)
@@ -255,7 +260,14 @@
 
 void memswap(void * a, void * b, uint8_t size);
 
-#if defined(PCBX9D) || defined(PCBX9DP) || defined(PCBX9E) || defined(PCBHORUS)
+#if NUM_POTS == 0
+  #define POT_CONFIG(x)                (false)
+  #define IS_POT_MULTIPOS(x)           (false)
+  #define IS_POT_WITHOUT_DETENT(x)     (false)
+  #define IS_POT_AVAILABLE(x)          (false)
+  #define IS_POT_SLIDER_AVAILABLE(x)   (false)
+  #define IS_MULTIPOS_CALIBRATED(cal)  (false)
+#elif defined(PCBX9D) || defined(PCBX9DP) || defined(PCBX9E) || defined(PCBHORUS)
   #define POT_CONFIG(x)                ((g_eeGeneral.potsConfig >> (2*((x)-POT1)))&0x03)
   #define IS_POT_MULTIPOS(x)           (IS_POT(x) && POT_CONFIG(x)==POT_MULTIPOS_SWITCH)
   #define IS_POT_WITHOUT_DETENT(x)     (IS_POT(x) && POT_CONFIG(x)==POT_WITHOUT_DETENT)
@@ -277,10 +289,22 @@ void memswap(void * a, void * b, uint8_t size);
   #define IS_MULTIPOS_CALIBRATED(cal)  (false)
 #endif
 
+#if NUM_XPOTS > 0
+  #define IS_SWITCH_MULTIPOS(x)         (SWSRC_FIRST_MULTIPOS_SWITCH <= (x) && (x) <= SWSRC_LAST_MULTIPOS_SWITCH)
+#else
+  #define IS_SWITCH_MULTIPOS(x)         (false)
+#endif
+
 #if defined(PWR_BUTTON_PRESS)
   #define pwrOffPressed()              pwrPressed()
 #else
   #define pwrOffPressed()              (!pwrPressed())
+#endif
+
+#if defined(RADIO_FAMILY_TBS)
+  #define PWR_PRESS_SHUTDOWN_THRESHOD  300 // 3s
+#else
+  #define PWR_PRESS_SHUTDOWN_THRESHOD  0   // 0s
 #endif
 
 #define GET_LOWRES_POT_POSITION(i)     (getValue(MIXSRC_FIRST_POT+(i)) >> 4)
@@ -309,7 +333,7 @@ void memswap(void * a, void * b, uint8_t size);
 #define MASK_CFN_TYPE  uint64_t  // current max = 64 function switches
 #define MASK_FUNC_TYPE uint32_t  // current max = 32 functions
 
-typedef struct {
+struct CustomFunctionsContext {
   MASK_FUNC_TYPE activeFunctions;
   MASK_CFN_TYPE  activeSwitches;
   tmr10ms_t lastFunctionTime[MAX_SPECIAL_FUNCTIONS];
@@ -323,7 +347,7 @@ typedef struct {
   {
     memclear(this, sizeof(*this));
   }
-} CustomFunctionsContext;
+};
 
 #include "strhelpers.h"
 #include "gui.h"
@@ -373,6 +397,13 @@ inline bool SPLASH_NEEDED()
   #define SPLASH_TIMEOUT               (4 * 100)  // 4 seconds
 #endif
 
+
+#if defined(ROTARY_ENCODER_NAVIGATION)
+  #define CASE_ROTARY_ENCODER(x) x,
+#else
+  #define CASE_ROTARY_ENCODER(x)
+#endif
+
 #if defined(ROTARY_ENCODER_NAVIGATION)
   #define IS_ROTARY_ENCODER_NAVIGATION_ENABLE()  true
   extern volatile rotenc_t rotencValue;
@@ -383,14 +414,19 @@ inline bool SPLASH_NEEDED()
   #define ROTENC_HIGHSPEED             50
   #define ROTENC_DELAY_MIDSPEED        32
   #define ROTENC_DELAY_HIGHSPEED       16
+#elif defined(RADIO_T8)
+  constexpr uint8_t rotencSpeed = 1;
 #endif
 
 constexpr uint8_t HEART_TIMER_10MS = 0x01;
 constexpr uint8_t HEART_TIMER_PULSES = 0x02; // when multiple modules this is the first one
-#if defined(HARDWARE_INTERNAL_MODULE)
+
+#if defined(HARDWARE_INTERNAL_MODULE) && defined(HARDWARE_EXTERNAL_MODULE)
 constexpr uint8_t HEART_WDT_CHECK = HEART_TIMER_10MS + (HEART_TIMER_PULSES << INTERNAL_MODULE) + (HEART_TIMER_PULSES << EXTERNAL_MODULE);
-#else
+#elif defined(HARDWARE_EXTERNAL_MODULE)
 constexpr uint8_t HEART_WDT_CHECK = HEART_TIMER_10MS + (HEART_TIMER_PULSES << EXTERNAL_MODULE);
+#elif defined(HARDWARE_INTERNAL_MODULE)
+constexpr uint8_t HEART_WDT_CHECK = HEART_TIMER_10MS + (HEART_TIMER_PULSES << INTERNAL_MODULE);
 #endif
 extern uint8_t heartbeat;
 
@@ -438,6 +474,10 @@ extern uint8_t potsPos[NUM_XPOTS];
 bool trimDown(uint8_t idx);
 void readKeysAndTrims();
 
+#if defined(KEYS_GPIO_REG_BIND)
+void bindButtonHandler(event_t event);
+#endif
+
 uint16_t evalChkSum();
 
 void alert(const char * title, const char * msg, uint8_t sound);
@@ -484,9 +524,11 @@ extern uint32_t nextMixerTime[NUM_MODULES];
 void evalFlightModeMixes(uint8_t mode, uint8_t tick10ms);
 void evalMixes(uint8_t tick10ms);
 void doMixerCalculations();
+void doMixerPeriodicUpdates();
 void scheduleNextMixerCalculation(uint8_t module, uint32_t period_ms);
 
 void checkTrims();
+extern uint8_t currentBacklightBright;
 void perMain();
 void per10ms();
 
@@ -536,7 +578,7 @@ bool setTrimValue(uint8_t phase, uint8_t idx, int trim);
 
 #if defined(PCBSKY9X)
   #define ROTARY_ENCODER_GRANULARITY (2 << g_eeGeneral.rotarySteps)
-#elif defined(RADIO_FAMILY_T16) && !defined(RADIO_T18)
+#elif defined(RADIO_FAMILY_TBS)
   #define ROTARY_ENCODER_GRANULARITY (1)
 #else
   #define ROTARY_ENCODER_GRANULARITY (2)
@@ -637,6 +679,8 @@ void modelDefault(uint8_t id);
 #if defined(EEPROM)
 void checkModelIdUnique(uint8_t index, uint8_t module);
 uint8_t findNextUnusedModelId(uint8_t index, uint8_t module);
+#elif defined(EEPROM_SDCARD)
+void checkModelIdUnique(uint8_t module);
 #endif
 
 uint32_t hash(const void * ptr, uint32_t size);
@@ -678,6 +722,7 @@ inline int calcRESXto100(int x)
 
 
 #if defined(COLORLCD)
+extern const char fw_stamp[];
 extern const char vers_stamp[];
 extern const char date_stamp[];
 extern const char time_stamp[];
@@ -845,12 +890,13 @@ enum FunctionsActive {
   FUNCTION_TRAINER_CHANNELS = FUNCTION_TRAINER_STICK1 + NUM_STICKS,
   FUNCTION_INSTANT_TRIM,
   FUNCTION_VARIO,
-  FUNCTION_BACKLIGHT,
 #if defined(SDCARD)
   FUNCTION_LOGS,
 #endif
   FUNCTION_BACKGND_MUSIC,
   FUNCTION_BACKGND_MUSIC_PAUSE,
+  FUNCTION_BACKLIGHT,
+  FUNCTION_RACING_MODE,
 };
 
 #define VARIO_FREQUENCY_ZERO   700/*Hz*/
@@ -912,6 +958,17 @@ enum AUDIO_SOUNDS {
   AU_STICK2_MIDDLE,
   AU_STICK3_MIDDLE,
   AU_STICK4_MIDDLE,
+#if !defined(HARDWARE_TRIMS)
+  AU_AILERON_TRIM,
+  AU_ELEVATOR_TRIM,
+  AU_THROTTLE_TRIM,
+  AU_RUDDER_TRIME,
+  AU_MAIN_MENU,
+#endif
+#if defined(RADIO_FAMILY_TBS)
+  AU_CATEGORY_ENABLED,
+  AU_CATEGORY_DISABLED,
+#endif
 #if defined(PCBTARANIS) || defined(PCBHORUS)
   AU_POT1_MIDDLE,
   AU_POT2_MIDDLE,
@@ -995,7 +1052,13 @@ constexpr uint8_t OPENTX_START_NO_CHECKS = 0x04;
 
 #if defined(STATUS_LEDS)
   #define LED_ERROR_BEGIN()            ledRed()
+#if defined(RADIO_T8)
+  // Because of green backlit logo, green is preferred on this radio
+  #define LED_ERROR_END()              ledGreen()
+  #define LED_BIND()                   ledBlue()
+#else
   #define LED_ERROR_END()              ledBlue()
+#endif
 #else
   #define LED_ERROR_BEGIN()
   #define LED_ERROR_END()
@@ -1124,6 +1187,15 @@ union ReusableBuffer
     uint8_t moduleOFF;
   } spectrumAnalyser;
 
+#if defined(GHOST)
+  struct {
+    GhostMenuData line[GHST_MENU_LINES + 1];
+    uint8_t menuStatus;
+    uint8_t menuAction;
+    uint8_t buttonAction;
+  } ghostMenu;
+#endif
+
   struct {
     uint32_t freq;
     int16_t power;
@@ -1217,6 +1289,13 @@ inline bool IS_TXBATT_WARNING()
   return g_vbat100mV <= g_eeGeneral.vBatWarn;
 }
 
+#if defined(BATT_CRITICAL_SHUTDOWN)
+inline bool IS_TXBATT_CRITICAL()
+{
+  return g_vbat100mV <= BATTERY_CRITICAL;
+}
+#endif
+
 enum TelemetryViews {
   TELEMETRY_CUSTOM_SCREEN_1,
   TELEMETRY_CUSTOM_SCREEN_2,
@@ -1248,6 +1327,12 @@ void usbPluggedIn();
 #endif
 
 #include "lua/lua_api.h"
+
+#if defined(LUA)
+#define LUA_DEFINED() true
+#else
+#define LUA_DEFINED() false
+#endif
 
 #if defined(SDCARD)
 enum ClipboardType {
@@ -1324,8 +1409,29 @@ inline bool isAsteriskDisplayed()
   return globalData.unexpectedShutdown;
 }
 
+#if defined(INTERNAL_MODULE_CRSF)
+#include "./io/crsf/crsf_write.h"
+#include "./io/crsf/crsf_utilities.h"
+#include "./io/crsf/crossfire.h"
+#endif
+
 #if defined(ACCESS_LIB)
 #include "thirdparty/libACCESS/libAccess.h"
 #endif
 
-#endif // _OPENTX_H_
+#define VBAT_MIN_OFFSET 90
+#define VBAT_MAX_OFFSET 120
+#define VBAT_MIN_DELTA (VBAT_MAX_OFFSET - VBAT_MIN_OFFSET - 1)
+
+#if defined(BATTERY_TYPE_FIXED)
+#define VBAT_MIN_ALLOWED  BATTERY_MIN
+#define VBAT_MAX_ALLOWED  BATTERY_MAX
+#define VBAT_WARNING_MIN_ALLOWED  BATTERY_MIN
+#define VBAT_WARNING_MAX_ALLOWED  (BATTERY_MIN + 5)
+#else
+#define VBAT_WARNING_MIN_ALLOWED  30  // 3.0v
+  #define VBAT_WARNING_MAX_ALLOWED  120 // 12v
+  #define VBAT_MIN_ALLOWED  30  // 3.0v
+  #define VBAT_MAX_ALLOWED  160 // 16v
+#endif
+

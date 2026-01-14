@@ -18,101 +18,51 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _AUTOCOMBOBOX_H_
-#define _AUTOCOMBOBOX_H_
+#pragma once
+
+#include "autowidget.h"
+#include "rawsource.h"
+#include "rawswitch.h"
 
 #include <QComboBox>
-#include "genericpanel.h"
 
-class AutoComboBox: public QComboBox
+class AutoComboBox : public QComboBox, public AutoWidget
 {
   Q_OBJECT
 
   public:
-    explicit AutoComboBox(QWidget *parent = nullptr):
-      QComboBox(parent)
-    {
-      connect(this, SIGNAL(currentIndexChanged(int)), this, SLOT(onCurrentIndexChanged(int)));
-    }
+    explicit AutoComboBox(QWidget * parent = nullptr);
+    virtual ~AutoComboBox();
 
-    void clear()
-    {
-      lock = true;
-      QComboBox::clear();
-      next = 0;
-      lock = false;
-    }
+    // QComboBox
+    virtual void addItem(const QString & item);
+    virtual void addItem(const QString & item, int value);
+    virtual void insertItems(int index, const QStringList & items);
+    // AutoWidget
+    virtual void updateValue() override;
 
-    virtual void insertItems(int index, const QStringList & items)
-    {
-      foreach(QString item, items) {
-        addItem(item);
-      }
-    }
+    void clear();
 
-    virtual void addItem(const QString & item)
-    {
-      addItem(item, next++);
-    }
+    void setField(unsigned int & field, GenericPanel * panel = nullptr);
+    void setField(int & field, GenericPanel * panel = nullptr);
+    void setField(RawSource & field, GenericPanel * panel = nullptr);
+    void setField(RawSwitch & field, GenericPanel * panel = nullptr);
 
-    virtual void addItem(const QString & item, int value)
-    {
-      lock = true;
-      QComboBox::addItem(item, value);
-      lock = false;
-      updateValue();
-    }
-
-    void setField(unsigned int & field, GenericPanel * panel=nullptr)
-    {
-      this->field = (int *)&field;
-      this->panel = panel;
-      updateValue();
-    }
-
-    void setField(int & field, GenericPanel * panel=nullptr)
-    {
-      this->field = &field;
-      this->panel = panel;
-      updateValue();
-    }
-
-    void setAutoIndexes()
-    {
-      for (int i=0; i<count(); ++i)
-        setItemData(i, i);
-      updateValue();
-    }
-
-    void updateValue()
-    {
-      if (!field)
-        return;
-      lock = true;
-      setCurrentIndex(findData(*field));
-      lock = false;
-    }
+    void setAutoIndexes();
+    void setModel(QAbstractItemModel * model);
 
   signals:
     void currentDataChanged(int value);
 
   protected slots:
-    void onCurrentIndexChanged(int index)
-    {
-      const int val = itemData(index).toInt();
-      if (field && !lock) {
-        *field = val;
-        if (panel)
-          emit panel->modified();
-      }
-      emit currentDataChanged(val);
-    }
+    void onCurrentIndexChanged(int index);
 
-  protected:
-    int * field = nullptr;
-    GenericPanel * panel = nullptr;
-    int next = 0;
-    bool lock = false;
+  private:
+    int *m_field;
+    int m_next;
+    bool m_hasModel;
+    RawSource *m_rawSource;
+    RawSwitch *m_rawSwitch;
+
+    void setFieldInit(GenericPanel * panel);
 };
-
-#endif // _AUTOCOMBOBOX_H_

@@ -24,32 +24,31 @@
 #if defined(MULTIMODULE)
 void lcdDrawMultiProtocolString(coord_t x, coord_t y, uint8_t moduleIdx, uint8_t protocol, LcdFlags flags)
 {
-  if (protocol <= MODULE_SUBTYPE_MULTI_LAST) {
+  MultiModuleStatus & status = getMultiModuleStatus(moduleIdx);
+  if (status.protocolName[0] && status.isValid()) {
+    lcdDrawText(x, y, status.protocolName, flags);
+  }
+  else if (protocol <= MODULE_SUBTYPE_MULTI_LAST) {
     lcdDrawTextAtIndex(x, y, STR_MULTI_PROTOCOLS, protocol, flags);
-    return;
   }
   else {
-    MultiModuleStatus &status = getMultiModuleStatus(moduleIdx);
-    if (status.protocolName[0] && status.isValid())
-      lcdDrawText(x, y, status.protocolName, flags);
-    else
-      lcdDrawNumber(x, y, protocol + 3, flags); // Convert because of OpenTX FrSky fidling (OpenTX protocol tables and Multiprotocol tables don't match)
+    lcdDrawNumber(x, y, protocol + 3, flags); // Convert because of OpenTX FrSky fidling (OpenTX protocol tables and Multiprotocol tables don't match)
   }
 }
 
 void lcdDrawMultiSubProtocolString(coord_t x, coord_t y, uint8_t moduleIdx, uint8_t subType, LcdFlags flags)
 {
-  const mm_protocol_definition *pdef = getMultiProtocolDefinition(g_model.moduleData[moduleIdx].getMultiProtocol());
-  if (subType <= pdef->maxSubtype && pdef->subTypeString != nullptr) {
+  MultiModuleStatus & status = getMultiModuleStatus(moduleIdx);
+  const mm_protocol_definition * pdef = getMultiProtocolDefinition(g_model.moduleData[moduleIdx].getMultiProtocol());
+
+  if (status.protocolName[0] && status.isValid()) {
+    lcdDrawText(x, y, status.protocolSubName, flags);
+  }
+  else if (subType <= pdef->maxSubtype && pdef->subTypeString != nullptr) {
     lcdDrawTextAtIndex(x, y, pdef->subTypeString, subType, flags);
-    return;
   }
   else {
-    MultiModuleStatus &status = getMultiModuleStatus(moduleIdx);
-    if (status.protocolName[0] && status.isValid())
-      lcdDrawText(x, y, status.protocolSubName, flags);
-    else
-      lcdDrawNumber(x, y, subType, flags);
+    lcdDrawNumber(x, y, subType, flags);
   }
 }
 #endif
@@ -146,7 +145,13 @@ void editName(coord_t x, coord_t y, char * name, uint8_t size, event_t event, ui
           if (c <= 0) v = -v;
         }
         else {
-          v = checkIncDec(event, abs(v), '0', 'z', 0);
+          if (v == ' ') {
+            v = '0' - 1;
+          }
+          v = checkIncDec(event, abs(v), ' ' - 1, 'z', 0);
+          if (v == '0' - 1) {
+            v = ' ';
+          }
         }
       }
 
@@ -353,6 +358,11 @@ void drawSensorCustomValue(coord_t x, coord_t y, uint8_t sensor, int32_t value, 
     return;
   }
 
+  if (IS_FAI_FORBIDDEN(MIXSRC_FIRST_TELEM + 3 * sensor)) {
+    lcdDrawText(x, y, "FAI mode", flags);
+    return;
+  }
+
   TelemetryItem & telemetryItem = telemetryItems[sensor];
   TelemetrySensor & telemetrySensor = g_model.telemetrySensors[sensor];
 
@@ -397,6 +407,10 @@ void drawSensorCustomValue(coord_t x, coord_t y, uint8_t sensor, int32_t value, 
               "Rx2 Lost",
               "Rx1 NS",
               "Rx2 NS",
+              "Rx3 FS",
+              "Rx3 LF",
+              "Rx3 Lost",
+              "Rx3 NS"
             };
             for (uint8_t i = 0; i < DIM(RXS_STATUS); i++) {
               if (value & (1u << i)) {
@@ -410,7 +424,7 @@ void drawSensorCustomValue(coord_t x, coord_t y, uint8_t sensor, int32_t value, 
       else if (telemetrySensor.id >= RB3040_OUTPUT_FIRST_ID && telemetrySensor.id <= RB3040_OUTPUT_LAST_ID) {
         if (telemetrySensor.subId == 0) {
           if (value == 0) {
-            lcdDrawText(x, y, "OK", flags);     
+            lcdDrawText(x, y, "OK", flags);
           }
           else {
             for (uint8_t i = 0; i < 9; i++) {
@@ -492,4 +506,87 @@ void drawSourceValue(coord_t x, coord_t y, source_t source, LcdFlags flags)
 {
   getvalue_t value = getValue(source);
   drawSourceCustomValue(x, y, source, value, flags);
+}
+
+void drawFatalErrorScreen(const char * message)
+{
+  BACKLIGHT_ENABLE();
+  drawFatalErrorScreen(STR_EMERGENCY_MODE);
+  lcdClear();
+  lcdDrawText(LCD_W/2, LCD_H/2-5, message, MIDSIZE|CENTERED);
+  lcdRefresh();
+}
+
+void runFatalErrorScreen(const char * message)
+{
+  while (true) {
+    drawFatalErrorScreen(message);
+    backlightEnable(100);
+    uint8_t refresh = false;
+    while (true) {
+      uint32_t pwr_check = pwrCheck();
+      if (pwr_check == e_power_off) {
+        boardOff();
+        return;
+      }
+      else if (pwr_check == e_power_press) {
+        refresh = true;
+      }
+      else if (pwr_check == e_power_on && refresh) {
+        break;
+      }
+    }
+  }
+}
+
+void drawGPSCoord(coord_t x, coord_t y, int32_t value, const char * direction, LcdFlags att, bool seconds)
+{
+#if LCD_W >= 212
+  att &= ~RIGHT;
+  if (x > 10)
+    x -= 10;
+#else
+  att &= ~RIGHT & ~BOLD;
+#endif
+
+  uint32_t absvalue = abs(value);
+  lcdDrawNumber(x, y, absvalue / 1000000, att); // ddd
+  lcdDrawChar(lcdLastRightPos, y, '@', att);
+  absvalue = absvalue % 1000000;
+  absvalue *= 60;
+  if (g_eeGeneral.gpsFormat == 0 || !seconds) {
+    lcdDrawNumber(lcdNextPos, y, absvalue / 1000000, att|LEFT|LEADING0, 2); // mm before '.'
+    lcdDrawSolidVerticalLine(lcdLastRightPos, y, 2);
+    lcdLastRightPos += 1;
+    if (seconds) {
+      absvalue %= 1000000;
+      absvalue *= 60;
+      absvalue /= 10000;
+      lcdDrawNumber(lcdLastRightPos+2, y, absvalue, att|LEFT|PREC2);
+      lcdDrawSolidVerticalLine(lcdLastRightPos, y, 2);
+      lcdDrawSolidVerticalLine(lcdLastRightPos+2, y, 2);
+      lcdLastRightPos += 3;
+    }
+  }
+  else {
+    absvalue /= 10000;
+    lcdDrawNumber(lcdLastRightPos+FW, y, absvalue, att|LEFT|PREC2); // mm.mmm
+  }
+  lcdDrawSizedText(lcdLastRightPos+1, y, direction + (value>=0 ? 0 : 1), 1);
+}
+
+void drawSwitch(coord_t x, coord_t y, swsrc_t idx, LcdFlags flags, bool autoBold)
+{
+  char s[8];
+  getSwitchPositionName(s, idx);
+  if (autoBold && idx != SWSRC_NONE && getSwitch(idx))
+    flags |= BOLD;
+  lcdDrawText(x, y, s, flags);
+}
+
+void drawCurveName(coord_t x, coord_t y, int8_t idx, LcdFlags flags)
+{
+  char s[8];
+  getCurveString(s, idx);
+  lcdDrawText(x, y, s, flags);
 }

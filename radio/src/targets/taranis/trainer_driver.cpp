@@ -283,7 +283,7 @@ void init_trainer_module_sbus()
   GPIO_InitStructure.GPIO_Speed = GPIO_Speed_2MHz;
   GPIO_Init(TRAINER_MODULE_SBUS_GPIO, &GPIO_InitStructure);
 
-  USART_InitStructure.USART_BaudRate = 100000;
+  USART_InitStructure.USART_BaudRate = SBUS_BAUDRATE;
   USART_InitStructure.USART_WordLength = USART_WordLength_9b;
   USART_InitStructure.USART_StopBits = USART_StopBits_1;
   USART_InitStructure.USART_Parity = USART_Parity_Even;
@@ -329,7 +329,7 @@ void stop_trainer_module_sbus()
 }
 #endif
 
-#if defined(SBUS)
+#if defined(SBUS_TRAINER)
 int sbusGetByte(uint8_t * byte)
 {
   switch (currentTrainerMode) {

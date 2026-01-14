@@ -4,7 +4,12 @@
 set -e
 set -x
 
-JOBS=2
+if [ "$(uname)" = "Darwin" ]; then
+  num_cpus=$(sysctl -n hw.ncpu)
+  : "${JOBS:=$num_cpus}"
+else
+  JOBS=3
+fi
 
 while [ $# -gt 0 ]
 do
@@ -62,7 +67,31 @@ cmake ${COMMON_OPTIONS} -DPCB=X7 ${SRCDIR}
 make -j${JOBS} libsimulator
 rm CMakeCache.txt
 
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=ACCESS ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
 cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=T12 ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=TX12 ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=ZORRO ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=T8 ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=TLITE ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=TPRO ${SRCDIR}
 make -j${JOBS} libsimulator
 rm CMakeCache.txt
 
@@ -102,13 +131,16 @@ cmake ${COMMON_OPTIONS} -DPCB=X10 -DPCBREV=TX16S ${SRCDIR}
 make -j${JOBS} libsimulator
 rm CMakeCache.txt
 
+cmake ${COMMON_OPTIONS} -DPCB=X10 -DPCBREV=T18 ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
 cmake ${COMMON_OPTIONS} -DPCB=X10 -DPCBREV=EXPRESS ${SRCDIR}
 make -j${JOBS} libsimulator
 rm CMakeCache.txt
 
 cmake ${COMMON_OPTIONS} -DPCB=X12S ${SRCDIR}
 make -j${JOBS} libsimulator
-rm CMakeCache.txt
 
 make -j${JOBS} package
 

@@ -18,55 +18,44 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _AUTOHEXSPINBOX_H_
-#define _AUTOHEXSPINBOX_H_
+#pragma once
 
-#include "hexspinbox.h"
-#include "modeledit/modeledit.h"
+#include "autowidget.h"
 
-class AutoHexSpinBox: public HexSpinBox
+#include <QSpinBox>
+#include <QString>
+
+class QRegExpValidator;
+
+class AutoHexSpinBox : public QSpinBox, public AutoWidget
 {
   Q_OBJECT
 
   public:
-    explicit AutoHexSpinBox(QWidget *parent = 0):
-      HexSpinBox(parent),
-      field(NULL),
-      panel(NULL),
-      lock(false)
-    {
-      connect(this, SIGNAL(valueChanged(int)), this, SLOT(onValueChanged(int)));
-    }
+    constexpr static unsigned int AUTOHEXSPINBOX_MAX_VALUE {65535};
 
-    void setField(unsigned int & field, ModelPanel * panel=NULL)
-    {
-      this->field = &field;
-      this->panel = panel;
-      updateValue();
-    }
+    explicit AutoHexSpinBox(QWidget * parent = nullptr);
+    virtual ~AutoHexSpinBox();
 
-    void updateValue()
-    {
-      if (field) {
-        setValue(*field);
-      }
-    }
+    virtual void updateValue();
 
-  protected slots:
-    void onValueChanged(int value)
-    {
-      if (field && !lock) {
-        *field = value;
-        if (panel) {
-          emit panel->modified();
-        }
-      }
-    }
+    void setField(unsigned int & field, const unsigned int min = 0, const unsigned int max = AUTOHEXSPINBOX_MAX_VALUE, GenericPanel * panel = nullptr);
+    void setField(unsigned int & field, GenericPanel * panel = nullptr);
+    void setRange(unsigned int min = 0, unsigned int max = AUTOHEXSPINBOX_MAX_VALUE);
 
   protected:
-    unsigned int * field;
-    ModelPanel * panel;
-    bool lock;
-};
+    QValidator::State validate(QString &text, int &pos) const;
+    int valueFromText(const QString &text) const;
+    QString textFromValue(int value) const;
 
-#endif // _AUTOHEXSPINBOX_H_
+  signals:
+    void currentDataChanged(int value);
+
+  protected slots:
+    void onValueChanged(int value);
+
+  private:
+    unsigned int *m_field;
+    QRegExpValidator *m_validator;
+    unsigned int m_length;
+};

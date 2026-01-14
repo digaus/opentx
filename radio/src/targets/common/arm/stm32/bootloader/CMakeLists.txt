@@ -51,9 +51,16 @@ else()
     )
 endif()
 
+if (GUI_DIR STREQUAL 480x272)
+  set(LCD_SRC ../../../../../gui/${GUI_DIR}/lcd.cpp)
+elseif(LCD_DEPTH EQUAL 4)
+  set(LCD_SRC ../../../../../gui/common/stdlcd/lcd_4bits.cpp)
+else()
+  set(LCD_SRC ../../../../../gui/common/stdlcd/lcd_1bit.cpp)
+endif()
+
 set(BOOTLOADER_SRC
   ${BOOTLOADER_SRC}
-  ../../../../../gui/${GUI_DIR}/lcd.cpp
   ../../../../../gui/${GUI_DIR}/fonts.cpp
   ../../../../../keys.cpp
   ../../../../../strhelpers.cpp
@@ -87,16 +94,17 @@ set(BOOTLOADER_SRC
   init.c
   boot.cpp
   bin_files.cpp
+  ${LCD_SRC}
   )
 
-if(PCB STREQUAL X12S OR PCB STREQUAL X10 OR PCB STREQUAL X9E OR (PCB STREQUAL X9D+ AND PCBREV STREQUAL 2019) OR (PCB STREQUAL X7 AND NOT (PCBREV STREQUAL T12)) OR PCB STREQUAL X9LITE OR PCB STREQUAL X9LITES)
+if(ROTARY_ENCODER)
   set(BOOTLOADER_SRC
     ${BOOTLOADER_SRC}
     ../../../../../targets/common/arm/stm32/rotary_encoder_driver.cpp
     )
 endif()
 
-if(PCB STREQUAL X7 OR PCB STREQUAL XLITE OR PCB STREQUAL XLITES)
+if(BLUETOOTH)
   set(BOOTLOADER_SRC
     ${BOOTLOADER_SRC}
     ../../../../../targets/common/arm/stm32/bluetooth_driver.cpp

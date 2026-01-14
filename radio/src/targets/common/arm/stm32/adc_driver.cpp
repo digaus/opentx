@@ -44,6 +44,16 @@
   const int8_t adcDirection[NUM_ANALOGS] = {1,-1,1,-1,  1,1,-1,  1,1,  1,  1};
 #elif defined(PCBX9D)
   const int8_t adcDirection[NUM_ANALOGS] = {1,-1,1,-1,  1,1,0,   1,1,  1,  1};
+#elif defined(RADIO_TX12)
+  const int8_t adcDirection[NUM_ANALOGS] = {-1,1,-1,1,  -1,-1,  1,  1};
+#elif defined(RADIO_ZORRO)
+  const int8_t adcDirection[NUM_ANALOGS] = {-1, 1, 1, -1, -1, 1, 1, 1};
+#elif defined(RADIO_TANGO)
+  const int8_t adcDirection[NUM_ANALOGS] = {1,1,1,1,  1,1};
+#elif defined(RADIO_MAMBO)
+  const int8_t adcDirection[NUM_ANALOGS] = {1,1,1,1,  1,1,  1,1,1,1,1,  1,1};
+#elif defined(RADIO_TPRO)
+  const int8_t adcDirection[NUM_ANALOGS] = {1,-1,1,-1,  1,1,  1,  1};
 #elif defined(PCBX7)
   const int8_t adcDirection[NUM_ANALOGS] = {-1,1,-1,1,  1,1,  1,  1};
 #elif defined(PCBX9LITE)
@@ -59,6 +69,12 @@
   #define FIRST_ANALOG_ADC             0
   #define NUM_ANALOGS_ADC              11
   #define NUM_ANALOGS_ADC_EXT          (NUM_ANALOGS - NUM_ANALOGS_ADC)
+#elif defined(RADIO_TANGO)
+  #define FIRST_ANALOG_ADC             TX_VOLTAGE
+  #define NUM_ANALOGS_ADC              (NUM_ANALOGS - FIRST_ANALOG_ADC)
+#elif defined(RADIO_MAMBO)
+  #define FIRST_ANALOG_ADC             POT1
+  #define NUM_ANALOGS_ADC              (NUM_ANALOGS - FIRST_ANALOG_ADC)
 #else
   #define FIRST_ANALOG_ADC             0
   #define NUM_ANALOGS_ADC              NUM_ANALOGS
@@ -123,6 +139,15 @@ void adcInit()
     ADC_MAIN->SQR2 = (ADC_CHANNEL_BATT << 0) + (ADC_Channel_Vbat << 5);
     ADC_MAIN->SQR3 = (ADC_CHANNEL_STICK_LH << 0) + (ADC_CHANNEL_STICK_LV << 5) + (ADC_CHANNEL_STICK_RV << 10) + (ADC_CHANNEL_STICK_RH << 15) + (ADC_CHANNEL_POT1 << 20) + (ADC_CHANNEL_POT2 << 25);
   }
+#elif defined(RADIO_T8) || defined(RADIO_TLITE)
+  ADC_MAIN->SQR2 = (ADC_CHANNEL_BATT << 0) + (ADC_Channel_Vbat << 5);
+  ADC_MAIN->SQR3 = (ADC_CHANNEL_STICK_LH << 0) + (ADC_CHANNEL_STICK_LV << 5) + (ADC_CHANNEL_STICK_RV << 10) + (ADC_CHANNEL_STICK_RH << 15);
+#elif defined(RADIO_TANGO)
+  ADC_MAIN->SQR2 = 0;
+  ADC_MAIN->SQR3 = (ADC_CHANNEL_BATT<<0) + (ADC_Channel_Vbat<<5);
+#elif defined(RADIO_MAMBO)
+  ADC_MAIN->SQR2 = (ADC_CHANNEL_SWITCH_D << 0) + (ADC_CHANNEL_BATT << 5) + (ADC_Channel_Vbat << 10);
+  ADC_MAIN->SQR3 = (ADC_CHANNEL_POT1 << 0) + (ADC_CHANNEL_POT2 << 5) + (ADC_CHANNEL_TRIM << 10) + (ADC_CHANNEL_SWITCH_A << 15) + (ADC_CHANNEL_SWITCH_B << 20) + (ADC_CHANNEL_SWITCH_C << 25);
 #elif defined(PCBX7)
   ADC_MAIN->SQR2 = (ADC_CHANNEL_BATT << 0) + (ADC_Channel_Vbat << 5);
   ADC_MAIN->SQR3 = (ADC_CHANNEL_STICK_LH << 0) + (ADC_CHANNEL_STICK_LV << 5) + (ADC_CHANNEL_STICK_RV << 10) + (ADC_CHANNEL_STICK_RH << 15) + (ADC_CHANNEL_POT1 << 20) + (ADC_CHANNEL_POT2 << 25);
@@ -134,8 +159,8 @@ void adcInit()
   ADC_MAIN->SQR3 = (ADC_CHANNEL_STICK_LH << 0) + (ADC_CHANNEL_STICK_LV << 5) + (ADC_CHANNEL_STICK_RV << 10) + (ADC_CHANNEL_STICK_RH << 15) + (ADC_CHANNEL_POT1 << 20) + (ADC_CHANNEL_POT2 << 25);
 #endif
 
-  ADC_MAIN->SMPR1 = (ADC_SAMPTIME << 0) + (ADC_SAMPTIME << 3) + (ADC_SAMPTIME << 6) + (ADC_SAMPTIME << 9) + (ADC_SAMPTIME << 12) + (ADC_SAMPTIME << 15) + (ADC_SAMPTIME << 18) + (ADC_SAMPTIME << 21) + (ADC_SAMPTIME << 24);
-  ADC_MAIN->SMPR2 = (ADC_SAMPTIME << 0) + (ADC_SAMPTIME << 3) + (ADC_SAMPTIME << 6) + (ADC_SAMPTIME << 9) + (ADC_SAMPTIME << 12) + (ADC_SAMPTIME << 15) + (ADC_SAMPTIME << 18) + (ADC_SAMPTIME << 21) + (ADC_SAMPTIME << 24) + (ADC_SAMPTIME << 27);
+  ADC_MAIN->SMPR1 = ADC_MAIN_SMPR1;
+  ADC_MAIN->SMPR2 = ADC_MAIN_SMPR2;
 
   ADC->CCR = ADC_CCR_VBATE; // Enable vbat sensor
 
@@ -178,8 +203,11 @@ void adcInit()
 #endif
 }
 
-void adcSingleRead()
+constexpr uint16_t ADC_DMA_MAX_LOOP = 10000;
+
+bool adcSingleRead()
 {
+  uint16_t i = 0;
   ADC_DMA_Stream->CR &= ~DMA_SxCR_EN; // Disable DMA
   ADC_MAIN->SR &= ~(uint32_t)(ADC_SR_EOC | ADC_SR_STRT | ADC_SR_OVR);
   ADC_SET_DMA_FLAGS();
@@ -200,7 +228,7 @@ void adcSingleRead()
 #endif
 
 #if defined(PCBX9E)
-  for (unsigned int i=0; i<10000; i++) {
+  for (i = 0; i <= ADC_DMA_MAX_LOOP; i++) {
     if (ADC_TRANSFER_COMPLETE() && ADC_EXT_TRANSFER_COMPLETE()) {
       break;
     }
@@ -208,7 +236,7 @@ void adcSingleRead()
   ADC_DMA_Stream->CR &= ~DMA_SxCR_EN; // Disable DMA
   ADC_EXT_DMA_Stream->CR &= ~DMA_SxCR_EN; // Disable DMA
 #else
-  for (unsigned int i = 0; i < 10000; i++) {
+  for (i = 0; i <= ADC_DMA_MAX_LOOP; i++) {
     if (ADC_TRANSFER_COMPLETE()) {
       break;
     }
@@ -221,14 +249,16 @@ void adcSingleRead()
     rtcBatteryVoltage = ADC1->DR;
   }
 #endif
+
+  return i != ADC_DMA_MAX_LOOP;
 }
 
 void adcRead()
 {
   uint16_t temp[NUM_ANALOGS] = { 0 };
 
-  for (int i=0; i<4; i++) {
-    adcSingleRead();
+  for (int i = 0; i < 4; i++) {
+    while (!adcSingleRead());
     for (uint8_t x=FIRST_ANALOG_ADC; x<NUM_ANALOGS; x++) {
       uint16_t val = adcValues[x];
 #if defined(JITTER_MEASURE)

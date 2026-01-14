@@ -21,6 +21,7 @@
 #include "opentx.h"
 
 void trainerSendNextFrame();
+extern Fifo<uint8_t, TELEMETRY_FIFO_SIZE> telemetryNoDMAFifo;
 
 void init_trainer_ppm()
 {
@@ -102,7 +103,7 @@ void trainerSendNextFrame()
 {
   TRAINER_TIMER->CCR2 = GET_TRAINER_PPM_DELAY() * 2;
   TRAINER_TIMER->CCER = TIM_CCER_CC2E | (GET_TRAINER_PPM_POLARITY() ? 0 : TIM_CCER_CC2P);
-  TRAINER_TIMER->CCR1 = *(trainerPulsesData.ppm.ptr - 1) - 4000; // 2mS in advance
+  TRAINER_TIMER->CCR3 = *(trainerPulsesData.ppm.ptr - 1) - 4000; // 2mS in advance
 
   TRAINER_DMA_STREAM->CR &= ~DMA_SxCR_EN; // Disable DMA
   TRAINER_DMA_STREAM->CR |= TRAINER_DMA_CHANNEL | DMA_SxCR_DIR_0 | DMA_SxCR_MINC | DMA_SxCR_PSIZE_0 | DMA_SxCR_MSIZE_0 | DMA_SxCR_PL_0 | DMA_SxCR_PL_1;
@@ -119,8 +120,8 @@ extern "C" void TRAINER_DMA_IRQHandler()
 
   DMA_ClearITPendingBit(TRAINER_DMA_STREAM, TRAINER_DMA_FLAG_TC);
 
-  TRAINER_TIMER->SR &= ~TIM_SR_CC1IF; // Clear flag
-  TRAINER_TIMER->DIER |= TIM_DIER_CC1IE; // Enable this interrupt
+  TRAINER_TIMER->SR &= ~TIM_SR_CC3IF; // Clear flag
+  TRAINER_TIMER->DIER |= TIM_DIER_CC3IE; // Enable this interrupt
 }
 
 extern "C" void TRAINER_TIMER_IRQHandler()
@@ -144,11 +145,35 @@ extern "C" void TRAINER_TIMER_IRQHandler()
   }
 
   // PPM out compare interrupt
-  if ((TRAINER_TIMER->DIER & TIM_DIER_CC1IE) && (TRAINER_TIMER->SR & TIM_SR_CC1IF)) {
+  if ((TRAINER_TIMER->DIER & TIM_DIER_CC3IE) && (TRAINER_TIMER->SR & TIM_SR_CC3IF)) {
     // compare interrupt
-    TRAINER_TIMER->DIER &= ~TIM_DIER_CC1IE; // stop this interrupt
-    TRAINER_TIMER->SR &= ~TIM_SR_CC1IF; // Clear flag
+    TRAINER_TIMER->DIER &= ~TIM_DIER_CC3IE; // stop this interrupt
+    TRAINER_TIMER->SR &= ~TIM_SR_CC3IF; // Clear flag
     setupPulsesPPMTrainer();
     trainerSendNextFrame();
+  }
+}
+
+int sbusGetByte(uint8_t * byte)
+{
+  switch (currentTrainerMode) {
+#if defined(AUX_SERIAL) || defined(AUX2_SERIAL)
+    case TRAINER_MODE_MASTER_BATTERY_COMPARTMENT:
+#if defined(AUX_SERIAL)
+      if (auxSerialMode == UART_MODE_SBUS_TRAINER)
+        return auxSerialRxFifo.pop(*byte);
+#endif
+#if defined(AUX2_SERIAL)
+      if (aux2SerialMode == UART_MODE_SBUS_TRAINER)
+        return aux2SerialRxFifo.pop(*byte);
+#endif
+      return false;
+#endif
+#if defined(TRAINER_SPORT_SBUS)
+    case TRAINER_MODE_MASTER_SBUS_SPORT:
+      return telemetryNoDMAFifo.pop(*byte);
+#endif
+    default:
+      return false;
   }
 }

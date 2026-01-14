@@ -51,8 +51,17 @@ void preModelLoad()
   if (pulsesStarted()) {
     pausePulses();
   }
-
   pauseMixerCalculations();
+
+#if defined(HARDWARE_INTERNAL_MODULE)
+  stopPulsesInternalModule();
+#endif
+#if defined(HARDWARE_EXTERNAL_MODULE)
+  stopPulsesExternalModule();
+#endif
+#if defined(TRAINER_GPIO)
+  stopTrainer();
+#endif
 }
 
 void postRadioSettingsLoad()
@@ -61,6 +70,8 @@ void postRadioSettingsLoad()
   if (is_memclear(g_eeGeneral.ownerRegistrationID, PXX2_LEN_REGISTRATION_ID)) {
     setDefaultOwnerId();
   }
+#elif defined(RADIO_FAMILY_TBS) && !defined(SIMU)
+  loadDefaultRadioSettings();
 #endif
 }
 

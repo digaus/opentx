@@ -26,6 +26,7 @@
 constexpr int8_t TELEMETRY_SENSOR_TIMEOUT_UNAVAILABLE = -2;
 constexpr int8_t TELEMETRY_SENSOR_TIMEOUT_OLD = -1;
 constexpr int8_t TELEMETRY_SENSOR_TIMEOUT_START = 125; // * 160ms = 20s
+constexpr uint8_t TELEMETRY_SENSOR_TEXT_LENGTH = 16;
 
 class TelemetryItem
 {
@@ -74,7 +75,7 @@ class TelemetryItem
         // pilot latitude is stored in max
         // distFromEarthAxis is stored in value
       } gps;
-      char text[16];
+      char text[TELEMETRY_SENSOR_TEXT_LENGTH];
     };
 
     TelemetryItem()
@@ -91,29 +92,31 @@ class TelemetryItem
     void eval(const TelemetrySensor & sensor);
     void per10ms(const TelemetrySensor & sensor);
 
+    void setValue(const TelemetrySensor & sensor, const char * newVal, uint32_t unit=UNIT_TEXT, uint32_t prec=0);
+
     void setValue(const TelemetrySensor & sensor, int32_t newVal, uint32_t unit, uint32_t prec=0);
 
-    inline bool isAvailable()
+    inline bool isAvailable() const
     {
       return (timeout != TELEMETRY_SENSOR_TIMEOUT_UNAVAILABLE);
     }
 
-    inline bool isOld()
+    inline bool isOld() const
     {
       return (timeout == TELEMETRY_SENSOR_TIMEOUT_OLD);
     }
 
-    inline bool hasReceiveTime()
+    inline bool hasReceiveTime() const
     {
       return timeout >= 0;
     }
 
-    inline int8_t getDelaySinceLastValue()
+    inline int8_t getDelaySinceLastValue() const
     {
       return hasReceiveTime() ? TELEMETRY_SENSOR_TIMEOUT_START - timeout : TELEMETRY_SENSOR_TIMEOUT_OLD;
     }
 
-    inline bool isFresh()
+    inline bool isFresh() const
     {
       return TELEMETRY_SENSOR_TIMEOUT_START - timeout <= 1; // 2 * 160ms
     }

@@ -49,6 +49,7 @@
 
 #include "dialogs/filesyncdialog.h"
 #include "profilechooser.h"
+#include "constants.h"
 
 #include <QtGui>
 #include <QFileInfo>
@@ -65,7 +66,6 @@
 #define INTERACTIVE_DOWNLOAD   4
 #define AUTOMATIC_DOWNLOAD     8
 
-#define OPENTX_DOWNLOADS_PAGE_URL         QStringLiteral("http://www.open-tx.org/downloads")
 #define DONATE_STR                        QStringLiteral("https://www.paypal.com/cgi-bin/webscr?cmd=_s-xclick&hosted_button_id=QUZ48K4SEXDP2")
 
 #ifdef Q_OS_MACOS
@@ -130,15 +130,9 @@ MainWindow::MainWindow():
   else {
     if (!g.previousVersion().isEmpty())
       g.warningId(g.warningId() | AppMessages::MSG_UPGRADED);
+
     if (g.promptProfile()) {
-      QTimer::singleShot(updateDelay, this, SLOT(chooseProfile()));    // add an extra second to give mainwindow time to load
-      updateDelay += 5000;  //  give user time to select profile before warnings
-    }
-    else {
-      if (checkProfileRadioExists(g.sessionId()))
-        QTimer::singleShot(updateDelay, this, SLOT(doAutoUpdates()));
-      else
-        g.warningId(g.warningId() | AppMessages::MSG_NO_RADIO_TYPE);
+      chooseProfile();
     }
   }
   QTimer::singleShot(updateDelay, this, SLOT(displayWarnings()));
@@ -184,6 +178,11 @@ MainWindow::MainWindow():
   if (printing) {
     QTimer::singleShot(0, this, SLOT(autoClose()));
   }
+
+  if (checkProfileRadioExists(g.sessionId()))
+    QTimer::singleShot(updateDelay, this, SLOT(doAutoUpdates()));
+  else
+    g.warningId(g.warningId() | AppMessages::MSG_NO_RADIO_TYPE);
 }
 
 MainWindow::~MainWindow()
@@ -380,7 +379,7 @@ void MainWindow::checkForCompanionUpdateFinished(QNetworkReply * reply)
       }
     }
 #else
-    QMessageBox::warning(this, tr("New release available"), tr("A new release of Companion is available, please check the <a href='%1'>OpenTX website!</a>").arg(OPENTX_DOWNLOADS_PAGE_URL));
+    QMessageBox::warning(this, tr("New release available"), tr("A new release of Companion is available, please check the <a href='%1'>OpenTX website!</a>").arg(getCurrentFirmware()->getReleaseNotesUrl()));
 #endif
   }
   else {
@@ -523,17 +522,26 @@ void MainWindow::checkForFirmwareUpdateFinished(QNetworkReply * reply)
     int currentVersion = g.fwRev.get(Firmware::getCurrentVariant()->getId());
     QString currentVersionString = index2version(currentVersion);
 
-    QMessageBox msgBox;
-    msgBox.setWindowTitle(CPN_STR_APP_NAME);
-    QSpacerItem * horizontalSpacer = new QSpacerItem(500, 0, QSizePolicy::Minimum, QSizePolicy::Expanding);
-    QGridLayout * layout = (QGridLayout*)msgBox.layout();
-    layout->addItem(horizontalSpacer, layout->rowCount(), 0, 1, layout->columnCount());
+    QString msgText;
+    if (currentVersion == 0)
+      msgText = tr("Firmware %1 does not seem to have ever been downloaded.\nVersion %2 is available.\nDo you want to download it now?\n\nWe recommend you view the release notes using the button below to learn about any changes that may be important to you.")
+                  .arg(Firmware::getCurrentVariant()->getId()).arg(fullVersionString);
+    else if (version > currentVersion)
+      msgText = tr("A new version of %1 firmware is available:\n  - current is %2\n  - newer is %3\n\nDo you want to download it now?\n\nWe recommend you view the release notes using the button below to learn about any changes that may be important to you.")
+                  .arg(Firmware::getCurrentVariant()->getId()).arg(currentVersionString).arg(fullVersionString);
+    else if (checkForUpdatesState == INTERACTIVE_DOWNLOAD)
+      QMessageBox::information(this, CPN_STR_APP_NAME, tr("No updates available at this time."));
 
-    if (currentVersion == 0) {
+    if (currentVersion == 0 || version > currentVersion) {
+      QMessageBox msgBox;
+      msgBox.setWindowTitle(CPN_STR_APP_NAME);
+      QSpacerItem * horizontalSpacer = new QSpacerItem(500, 0, QSizePolicy::Minimum, QSizePolicy::Expanding);
+      QGridLayout * layout = (QGridLayout*)msgBox.layout();
+      layout->addItem(horizontalSpacer, layout->rowCount(), 0, 1, layout->columnCount());
+
       QString rn = getCurrentFirmware()->getReleaseNotesUrl();
       QAbstractButton *rnButton = nullptr;
-      msgBox.setText(tr("Firmware %1 does not seem to have ever been downloaded.\nVersion %2 is available.\nDo you want to download it now?\n\nWe recommend you view the release notes using the button below to learn about any changes that may be important to you.")
-                     .arg(Firmware::getCurrentVariant()->getId()).arg(fullVersionString));
+      msgBox.setText(msgText);
       QAbstractButton *YesButton = msgBox.addButton(tr("Yes"), QMessageBox::YesRole);
       msgBox.addButton(tr("No"), QMessageBox::NoRole);
       if (!rn.isEmpty()) {
@@ -543,57 +551,17 @@ void MainWindow::checkForFirmwareUpdateFinished(QNetworkReply * reply)
       msgBox.resize(0, 0);
       msgBox.exec();
       if (msgBox.clickedButton() == rnButton) {
-        ReleaseNotesFirmwareDialog * dialog = new ReleaseNotesFirmwareDialog(this, rn);
-        dialog->exec();
+        QDesktopServices::openUrl(QUrl(rn));
         int ret2 = QMessageBox::question(this, CPN_STR_APP_NAME, tr("Do you want to download version %1 now ?").arg(fullVersionString), QMessageBox::Yes | QMessageBox::No);
         if (ret2 == QMessageBox::Yes)
           download = true;
         else
           ignore = true;
       }
-      else if (msgBox.clickedButton() == YesButton ) {
+      else if (msgBox.clickedButton() == YesButton )
         download = true;
-      }
-      else {
+      else
         ignore = true;
-      }
-    }
-    else if (version > currentVersion) {
-      QString rn = getCurrentFirmware()->getReleaseNotesUrl();
-      QAbstractButton *rnButton = nullptr;
-      msgBox.setText(tr("A new version of %1 firmware is available:\n  - current is %2\n  - newer is %3\n\nDo you want to download it now?\n\nWe recommend you view the release notes using the button below to learn about any changes that may be important to you.")
-                     .arg(Firmware::getCurrentVariant()->getId()).arg(currentVersionString).arg(fullVersionString));
-      QAbstractButton *YesButton = msgBox.addButton(tr("Yes"), QMessageBox::YesRole);
-      msgBox.addButton(tr("No"), QMessageBox::NoRole);
-      if (!rn.isEmpty()) {
-        rnButton = msgBox.addButton(tr("Release Notes"), QMessageBox::ActionRole);
-      }
-      msgBox.setIcon(QMessageBox::Question);
-      msgBox.resize(0,0);
-      msgBox.exec();
-      if( msgBox.clickedButton() == rnButton ) {
-        ReleaseNotesFirmwareDialog * dialog = new ReleaseNotesFirmwareDialog(this, rn);
-        dialog->exec();
-        int ret2 = QMessageBox::question(this, CPN_STR_APP_NAME, tr("Do you want to download version %1 now ?").arg(fullVersionString),
-              QMessageBox::Yes | QMessageBox::No);
-        if (ret2 == QMessageBox::Yes) {
-          download = true;
-        }
-        else {
-          ignore = true;
-        }
-      }
-      else if (msgBox.clickedButton() == YesButton ) {
-        download = true;
-      }
-      else {
-        ignore = true;
-      }
-    }
-    else {
-      if (checkForUpdatesState == INTERACTIVE_DOWNLOAD) {
-        QMessageBox::information(this, CPN_STR_APP_NAME, tr("No updates available at this time."));
-      }
     }
   }
 
@@ -883,6 +851,13 @@ void MainWindow::sdsync()
   static bool showExtraOptions = false;
   QStringList errorMsgs;
 
+  if (syncOpts.sessionId != g.sessionId()) {
+    syncOpts.reset();
+    syncOpts.folderA = QString();
+    syncOpts.folderB = QString();
+    syncOpts.sessionId = g.sessionId();
+  }
+
   if (syncOpts.folderA.isEmpty())
     syncOpts.folderA = g.profile[g.id()].sdPath();
   if (syncOpts.folderB.isEmpty())
@@ -915,8 +890,7 @@ void MainWindow::sdsync()
 
 void MainWindow::changelog()
 {
-  QString link = "http://www.open-tx.org";
-  QDesktopServices::openUrl(QUrl(link));
+  QDesktopServices::openUrl(QUrl(getCurrentFirmware()->getReleaseNotesUrl()));
 }
 
 void MainWindow::customizeSplash()
@@ -1586,7 +1560,7 @@ void MainWindow::updateWindowActions()
     QString scut;
     if (++count < 10)
       scut = tr("Alt+%1").arg(count);
-    QAction * act = addActToGroup(windowsListActions, "", "", "window_ptr", qVariantFromValue(win), QVariant(), scut);
+    QAction * act = addActToGroup(windowsListActions, "", "", "window_ptr", QVariant::fromValue(win), QVariant(), scut);
     act->setChecked(win == mdiArea->activeSubWindow());
     updateWindowActionTitle(win, act);
   }
@@ -1805,10 +1779,8 @@ void MainWindow::chooseProfile()
     connect(pcd, &ProfileChooserDialog::profileChanged, this, &MainWindow::loadProfileId);
     pcd->exec();
     delete pcd;
-    //  doi here as need to wait until dialog dismissed and current radio type is set
-    if (checkProfileRadioExists(g.sessionId()))
-      doAutoUpdates();
-    else
+
+    if (!checkProfileRadioExists(g.sessionId()))
       g.warningId(g.warningId() | AppMessages::MSG_NO_RADIO_TYPE);
   }
 }

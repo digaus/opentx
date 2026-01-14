@@ -54,7 +54,12 @@ void insertExpo(uint8_t idx)
   ExpoData * expo = expoAddress(idx);
   memmove(expo+1, expo, (MAX_EXPOS-(idx+1))*sizeof(ExpoData));
   memclear(expo, sizeof(ExpoData));
-  expo->srcRaw = (s_currCh > 4 ? MIXSRC_Rud - 1 + s_currCh : MIXSRC_Rud - 1 + channelOrder(s_currCh));
+  for (int i = s_currCh; i < INPUTSRC_LAST; i++) {
+    expo->srcRaw = (s_currCh > 4 ? MIXSRC_Rud - 1 + i: MIXSRC_Rud - 1 + channelOrder(i));
+    if (isSourceAvailableInInputs(expo->srcRaw)) {
+      break;
+    }
+  }
   expo->curve.type = CURVE_REF_EXPO;
   expo->mode = 3; // pos+neg
   expo->chn = s_currCh - 1;
@@ -175,8 +180,8 @@ void displayExpoLine(coord_t y, ExpoData * ed)
 {
   drawSource(EXPO_LINE_SRC_POS, y, ed->srcRaw, 0);
 
-  if (ed->carryTrim != TRIM_ON) {
-    lcdDrawChar(EXPO_LINE_TRIM_POS, y, ed->carryTrim > 0 ? '-' : STR_RETA123[-ed->carryTrim]);
+  if (ed->trimSource != TRIM_ON) {
+    lcdDrawChar(EXPO_LINE_TRIM_POS, y, ed->trimSource > 0 ? '-' : STR_RETA123[-ed->trimSource]);
   }
 
   if (!ed->flightModes || ((ed->curve.value || ed->swtch) && ((get_tmr10ms() / 200) & 1)))
@@ -365,7 +370,7 @@ void menuModelExposAll(event_t event)
   lcdDrawNumber(FW*sizeof(TR_MENUINPUTS)+FW+FW/2, 0, getExposCount(), RIGHT);
   lcdDrawText(FW*sizeof(TR_MENUINPUTS)+FW+FW/2, 0, STR_MAX(MAX_EXPOS));
 
-#if LCD_DEPTH > 1
+#if LCD_W >= 212
   // Value
   uint8_t index = expoAddress(s_currIdx)->chn;
   if (!s_currCh) {
@@ -375,7 +380,7 @@ void menuModelExposAll(event_t event)
   
   SIMPLE_MENU(STR_MENUINPUTS, menuTabModel, MENU_MODEL_INPUTS, HEADER_LINE + s_maxLines);
 
-#if LCD_DEPTH > 1
+#if LCD_W >= 212
   // Gauge
   if (!s_currCh) {
     drawGauge(127, 1, 58, 6, anas[index], 1024);

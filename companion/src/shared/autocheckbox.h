@@ -18,57 +18,32 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _AUTOCHECKBOX_H_
-#define _AUTOCHECKBOX_H_
+#pragma once
+
+#include "autowidget.h"
 
 #include <QCheckBox>
-#include "modeledit/modeledit.h"
 
-class AutoCheckBox: public QCheckBox
+class AutoCheckBox : public QCheckBox, public AutoWidget
 {
   Q_OBJECT
 
   public:
-    explicit AutoCheckBox(QWidget *parent = 0):
-      QCheckBox(parent),
-      field(NULL),
-      panel(NULL),
-      lock(false)
-    {
-      connect(this, SIGNAL(toggled(bool)), this, SLOT(onToggled(bool)));
-    }
+    explicit AutoCheckBox(QWidget * parent = nullptr);
+    virtual ~AutoCheckBox();
 
-    void setField(bool & field, ModelPanel * panel=NULL)
-    {
-      this->field = &field;
-      this->panel = panel;
-      updateValue();
-    }
+    virtual void updateValue() override;
 
-    void updateValue()
-    {
-      lock = true;
-      if (field) {
-        setChecked(*field);
-      }
-      lock = false;
-    }
+    void setField(bool & field, GenericPanel * panel = nullptr, bool invert = false);
+    void setInvert(bool invert);
+
+  signals:
+    void currentDataChanged(bool value);
 
   protected slots:
-    void onToggled(bool checked)
-    {
-      if (field && !lock) {
-        *field = checked;
-        if (panel) {
-          emit panel->modified();
-        }
-      }
-    }
+    void onToggled(bool checked);
 
-  protected:
-    bool * field;
-    ModelPanel * panel;
-    bool lock;
+  private:
+    bool *m_field;
+    bool m_invert;
 };
-
-#endif // _AUTOCHECKBOX_H_

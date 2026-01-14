@@ -18,8 +18,7 @@
  * GNU General Public License for more details.
  */
 
-#ifndef _GENERICPANEL_H_
-#define _GENERICPANEL_H_
+#pragma once
 
 #include <QWidget>
 
@@ -33,13 +32,8 @@ class GenericPanel : public QWidget
 {
   Q_OBJECT
 
-  friend class AutoComboBox;
-  friend class AutoDoubleSpinBox;
-  friend class AutoCheckBox;
-  friend class AutoHexSpinBox;
-  friend class AutoLineEdit;
   friend class GVarGroup;
-  friend class AutoPrecisionComboBox;
+  friend class AutoWidget;
 
   public:
     GenericPanel(QWidget *parent, ModelData * model, GeneralSettings & generalSettings, Firmware * firmware);
@@ -64,6 +58,5 @@ class GenericPanel : public QWidget
     virtual bool eventFilter(QObject *obj, QEvent *event);
     void setFocusFilter(QWidget * w);
     void disableMouseScrolling();
+    void updateAutoWidgets();
 };
-
-#endif // _GENERICPANEL_H_

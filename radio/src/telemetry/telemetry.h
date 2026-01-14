@@ -25,12 +25,15 @@
 #include "crossfire.h"
 #include "myeeprom.h"
 #include "io/frsky_sport.h"
-
+#if defined(GHOST)
+  #include "ghost.h"
+#endif
 #if defined(MULTIMODULE)
   #include "spektrum.h"
   #include "hitec.h"
   #include "hott.h"
   #include "multi.h"
+  #include "mlink.h"
 #endif
 #if defined(MULTIMODULE) || defined(AFHDS3)
   #include "flysky_ibus.h"
@@ -63,8 +66,17 @@ constexpr uint8_t TELEMETRY_TIMEOUT10ms = 100; // 1 second
 #define TELEMETRY_RX_PACKET_SIZE       19  // 9 bytes (full packet), worst case 18 bytes with byte-stuffing (+1)
 #endif
 
+#if defined(INTERNAL_MODULE_CRSF) || defined(INTERNAL_MODULE_ELRS)
+extern uint8_t intTelemetryRxBuffer[TELEMETRY_RX_PACKET_SIZE];
+extern uint8_t intTelemetryRxBufferCount;
+#endif
+
 extern uint8_t telemetryRxBuffer[TELEMETRY_RX_PACKET_SIZE];
 extern uint8_t telemetryRxBufferCount;
+
+//TODO: use module scoped buffers instead
+uint8_t* getTelemetryRxBuffer(uint8_t moduleIdx);
+uint8_t& getTelemetryRxBufferCount(uint8_t moduleIdx);
 
 #define TELEMETRY_AVERAGE_COUNT        3
 
@@ -76,8 +88,11 @@ enum {
   TELEM_CELL_INDEX_4,
   TELEM_CELL_INDEX_5,
   TELEM_CELL_INDEX_6,
+  TELEM_CELL_INDEX_7,
+  TELEM_CELL_INDEX_8,
   TELEM_CELL_INDEX_HIGHEST,
   TELEM_CELL_INDEX_DELTA,
+  TELEM_CELL_INDEX_LAST = TELEM_CELL_INDEX_DELTA
 };
 
 PACK(struct CellValue
@@ -95,6 +110,7 @@ PACK(struct CellValue
 });
 
 int setTelemetryValue(TelemetryProtocol protocol, uint16_t id, uint8_t subId, uint8_t instance, int32_t value, uint32_t unit, uint32_t prec);
+int setTelemetryText(TelemetryProtocol protocol, uint16_t id, uint8_t subId, uint8_t instance, const char * text);
 void delTelemetryIndex(uint8_t index);
 int availableTelemetryIndex();
 int lastUsedTelemetryIndex();
@@ -112,17 +128,23 @@ extern uint8_t telemetryProtocol;
 #if defined (MULTIMODULE)
   #define IS_D16_MULTI(module)           (((g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_FRSKY) && (g_model.moduleData[module].subType == MM_RF_FRSKY_SUBTYPE_D16 || g_model.moduleData[module].subType == MM_RF_FRSKY_SUBTYPE_D16_8CH || g_model.moduleData[module].subType == MM_RF_FRSKY_SUBTYPE_D16_LBT || g_model.moduleData[module].subType == MM_RF_FRSKY_SUBTYPE_D16_LBT_8CH || g_model.moduleData[module].subType == MM_RF_FRSKY_SUBTYPE_D16_CLONED)) \
                                          || (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_FRSKYX2))
+  #define IS_R9_MULTI(module)            (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_FRSKY_R9)
   #define IS_HOTT_MULTI(module)          (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_HOTT)
+  #define IS_CONFIG_MULTI(module)        (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_CONFIG)
+  #define IS_DSM_MULTI(module)           (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_DSM2)
   #define IS_RX_MULTI(module)            ((g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_AFHDS2A_RX) || (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_FRSKYX_RX) \
                                          || (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_BAYANG_RX) || (g_model.moduleData[module].getMultiProtocol() == MODULE_SUBTYPE_MULTI_DSM_RX))
   #if defined(HARDWARE_INTERNAL_MODULE)
-    #define IS_FRSKY_SPORT_PROTOCOL()    (telemetryProtocol == PROTOCOL_TELEMETRY_FRSKY_SPORT || (telemetryProtocol == PROTOCOL_TELEMETRY_MULTIMODULE && (IS_D16_MULTI(INTERNAL_MODULE)||IS_D16_MULTI(EXTERNAL_MODULE))))
+    #define IS_FRSKY_SPORT_PROTOCOL()    (telemetryProtocol == PROTOCOL_TELEMETRY_FRSKY_SPORT || (telemetryProtocol == PROTOCOL_TELEMETRY_MULTIMODULE && (IS_D16_MULTI(INTERNAL_MODULE) || IS_D16_MULTI(EXTERNAL_MODULE) || IS_R9_MULTI(INTERNAL_MODULE) || IS_R9_MULTI(EXTERNAL_MODULE))))
   #else
-    #define IS_FRSKY_SPORT_PROTOCOL()    (telemetryProtocol == PROTOCOL_TELEMETRY_FRSKY_SPORT || (telemetryProtocol == PROTOCOL_TELEMETRY_MULTIMODULE && IS_D16_MULTI(EXTERNAL_MODULE)))
+    #define IS_FRSKY_SPORT_PROTOCOL()    (telemetryProtocol == PROTOCOL_TELEMETRY_FRSKY_SPORT || (telemetryProtocol == PROTOCOL_TELEMETRY_MULTIMODULE && (IS_D16_MULTI(EXTERNAL_MODULE) || IS_R9_MULTI(EXTERNAL_MODULE))))
   #endif
 #else
   #define IS_D16_MULTI(module)           false
+  #define IS_R9_MULTI(module)            false
   #define IS_HOTT_MULTI(module)          false
+  #define IS_CONFIG_MULTI(module)        false
+  #define IS_DSM_MULTI(module)           false
   #define IS_FRSKY_SPORT_PROTOCOL()      (telemetryProtocol == PROTOCOL_TELEMETRY_FRSKY_SPORT)
   #define IS_RX_MULTI(module)            false
 #endif
@@ -148,6 +170,12 @@ inline uint8_t modelTelemetryProtocol()
 #if defined(CROSSFIRE)
   if (g_model.moduleData[EXTERNAL_MODULE].type == MODULE_TYPE_CROSSFIRE) {
     return PROTOCOL_TELEMETRY_CROSSFIRE;
+  }
+#endif
+
+#if defined(GHOST)
+  if (g_model.moduleData[EXTERNAL_MODULE].type == MODULE_TYPE_GHOST) {
+    return PROTOCOL_TELEMETRY_GHOST;
   }
 #endif
 
@@ -269,11 +297,49 @@ class OutputTelemetryBuffer {
 
 extern OutputTelemetryBuffer outputTelemetryBuffer __DMA;
 
+#if defined(RADIO_FAMILY_TBS)
+extern uint8_t outputTelemetryBufferTrigger;
+inline void telemetryOutputSetTrigger(uint8_t byte)
+{
+  outputTelemetryBufferTrigger = byte;
+}
+#endif
+
+
 #if defined(LUA)
 #define LUA_TELEMETRY_INPUT_FIFO_SIZE  256
 extern Fifo<uint8_t, LUA_TELEMETRY_INPUT_FIFO_SIZE> * luaInputTelemetryFifo;
 #endif
 
 void processPXX2Frame(uint8_t module, const uint8_t *frame);
+
+// Module pulse synchronization
+struct ModuleSyncStatus
+{
+  // feedback input: last received values
+  uint16_t  refreshRate; // in us
+  int16_t   inputLag;    // in us
+
+  tmr10ms_t lastUpdate;  // in 10ms
+  int16_t   currentLag;  // in us
+
+  inline bool isValid() {
+    // 2 seconds
+    return (get_tmr10ms() - lastUpdate < 200);
+  }
+
+  // Set feedback from RF module
+  void update(uint16_t newRefreshRate, int16_t newInputLag);
+
+  // Get computed settings for scheduler
+  uint16_t getAdjustedRefreshRate();
+
+  // Status string for the UI
+  void getRefreshString(char* refreshText);
+
+  ModuleSyncStatus();
+};
+
+ModuleSyncStatus& getModuleSyncStatus(uint8_t moduleIdx);
 
 #endif // _TELEMETRY_H_

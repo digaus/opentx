@@ -92,7 +92,8 @@ void boardInit()
                          TRAINER_RCC_AHB1Periph |
                          TRAINER_MODULE_RCC_AHB1Periph |
                          BT_RCC_AHB1Periph |
-                         GYRO_RCC_AHB1Periph,
+                         GYRO_RCC_AHB1Periph |
+                         USB_CHARGER_RCC_AHB1Periph,
                          ENABLE);
 
   RCC_APB1PeriphClockCmd(ROTARY_ENCODER_RCC_APB1Periph |
@@ -110,6 +111,7 @@ void boardInit()
                          AUX_SERIAL_RCC_APB1Periph |
                          INTMODULE_RCC_APB1Periph |
                          TRAINER_MODULE_RCC_APB1Periph |
+                         MIXER_SCHEDULER_TIMER_RCC_APB1Periph |
                          BT_RCC_APB1Periph |
                          GYRO_RCC_APB1Periph,
                          ENABLE);
@@ -129,6 +131,15 @@ void boardInit()
   bluetoothInit(BLUETOOTH_DEFAULT_BAUDRATE, true);
 #endif
 
+#if defined(RADIO_ZORRO)
+  if (FLASH_OB_GetBOR() != OB_BOR_LEVEL3) {
+    FLASH_OB_Unlock();
+    FLASH_OB_BORConfig(OB_BOR_LEVEL3);
+    FLASH_OB_Launch();
+    FLASH_OB_Lock();
+  }
+#endif
+
   pwrInit();
 
 #if defined(AUTOUPDATE)
@@ -139,6 +150,42 @@ void boardInit()
 #if defined(STATUS_LEDS)
   ledInit();
   ledGreen();
+#endif
+
+#if defined(RADIO_TPRO)
+  // This is needed to prevent radio from starting when usb is plugged to charge
+  usbInit();
+
+  // prime debounce state...
+  usbPlugged();
+
+  if (usbPlugged()) {
+    delaysInit();
+    adcInit();
+    getADC();
+    pwrOn(); // required to get bat adc reads
+    storageReadRadioSettings(false);  // Needed for bat calibration
+    INTERNAL_MODULE_OFF();
+    EXTERNAL_MODULE_OFF();
+
+    while (usbPlugged()) {
+      getADC();
+      delay_ms(20);
+      if (getBatteryVoltage() >= 660)
+        fsLedOn(0);
+      if (getBatteryVoltage() >= 700)
+        fsLedOn(1);
+      if (getBatteryVoltage() >= 740)
+        fsLedOn(2);
+      if (getBatteryVoltage() >= 780)
+        fsLedOn(3);
+      if (getBatteryVoltage() >= 820)
+        fsLedOn(4);
+      if (getBatteryVoltage() >= 842)
+        fsLedOn(5);
+    }
+    pwrOff();
+  }
 #endif
 
   keysInit();
@@ -164,7 +211,9 @@ void boardInit()
   init5msTimer();
   __enable_irq();
   i2cInit();
+#if !defined(RADIO_TPRO)
   usbInit();
+#endif
 
 #if defined(DEBUG) && defined(AUX_SERIAL_GPIO)
   auxSerialInit(0, 0); // default serial mode (None if DEBUG not defined)
@@ -191,6 +240,10 @@ void boardInit()
 
 #if defined(TOPLCD_GPIO)
   toplcdInit();
+#endif
+
+#if defined(USB_CHARGER)
+  usbChargerInit();
 #endif
 
   if (HAS_SPORT_UPDATE_CONNECTOR()) {
@@ -265,11 +318,27 @@ void boardOff()
   // this function must not return!
 }
 
+#if defined (RADIO_TX12)
+  #define BATTERY_DIVIDER 22830
+#elif defined (RADIO_T8)
+  #define BATTERY_DIVIDER 50000
+#elif defined (RADIO_ZORRO)
+  #define BATTERY_DIVIDER 23711 // = 2047*128*BATT_SCALE/(100*(VREF*(160+499)/160))
+#else
+  #define BATTERY_DIVIDER 26214
+#endif 
+
+#if defined(RADIO_ZORRO)
+  #define VOLTAGE_DROP 45
+#else
+  #define VOLTAGE_DROP 20
+#endif
+
 uint16_t getBatteryVoltage()
 {
   int32_t instant_vbat = anaIn(TX_VOLTAGE); // using filtered ADC value on purpose
-  instant_vbat = (instant_vbat * BATT_SCALE * (128 + g_eeGeneral.txVoltageCalibration) ) / 26214;
-  instant_vbat += 20; // add 0.2V because of the diode TODO check if this is needed, but removal will break existing calibrations!
+  instant_vbat = (instant_vbat * BATT_SCALE * (128 + g_eeGeneral.txVoltageCalibration) ) / BATTERY_DIVIDER;
+  instant_vbat += VOLTAGE_DROP; // add voltage drop because of the diode TODO check if this is needed, but removal will break existing calibrations!
   return (uint16_t)instant_vbat;
 }
 

@@ -4,7 +4,12 @@
 set -e
 set -x
 
-JOBS=3
+if [ "$(uname)" = "Darwin" ]; then
+  num_cpus=$(sysctl -n hw.ncpu)
+  : "${JOBS:=$num_cpus}"
+else
+  JOBS=3
+fi
 
 while [ $# -gt 0 ]
 do
@@ -25,13 +30,20 @@ done
 SRCDIR=$1
 OUTDIR=$2
 
-COMMON_OPTIONS="-DALLOW_NIGHTLY_BUILDS=YES -DTEST_BUILD_WARNING=YES -DGVARS=YES -DHELI=YES -DLUA=YES -DMULTIMODULE=YES -DTELEMETRY=FRSKY -DPPM_LIMITS_SYMETRICAL=YES -DVARIO=YES -DAUTOSWITCH=YES -DAUTOSOURCE=YES -DAUDIO=YES -DGPS=YES -DPPM_CENTER_ADJUSTABLE=YES -DFLIGHT_MODES=YES -DOVERRIDE_CHANNEL_FUNCTION=YES -DFRSKY_STICKS=YES"
+COMMON_OPTIONS="-DCMAKE_BUILD_TYPE=Release -DALLOW_NIGHTLY_BUILDS=YES -DTEST_BUILD_WARNING=YES -DGVARS=YES -DHELI=YES -DLUA=YES -DMULTIMODULE=YES -DTELEMETRY=FRSKY -DPPM_LIMITS_SYMETRICAL=YES -DVARIO=YES -DAUTOSWITCH=YES -DAUTOSOURCE=YES -DAUDIO=YES -DGPS=YES -DPPM_CENTER_ADJUSTABLE=YES -DFLIGHT_MODES=YES -DOVERRIDE_CHANNEL_FUNCTION=YES -DFRSKY_STICKS=YES"
 if [ "$(uname)" = "Darwin" ]; then
     COMMON_OPTIONS="${COMMON_OPTIONS} -DCMAKE_PREFIX_PATH=~/Qt/5.7/clang_64/ -DCMAKE_OSX_DEPLOYMENT_TARGET='10.9'"
 fi
 
 if [ "$3" != "" ]; then
   COMMON_OPTIONS="${COMMON_OPTIONS} -DVERSION_SUFFIX=$3"
+else
+  wget https://downloads.open-tx.org/2.3/nightlies/companion/companion-linux.stamp
+  version=$(cut -d'N' -f 3 < companion-linux.stamp)
+  version=$(echo $version | tr -cd '[[:digit:]]')
+  version=$((version+1))
+  nightly=N"$version"
+  COMMON_OPTIONS="${COMMON_OPTIONS} -DVERSION_SUFFIX=$nightly"
 fi
 
 rm -rf build
@@ -67,6 +79,26 @@ make -j${JOBS} libsimulator
 rm CMakeCache.txt
 
 cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=T12 ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=TX12 ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=ZORRO ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=T8 ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=TLITE ${SRCDIR}
+make -j${JOBS} libsimulator
+rm CMakeCache.txt
+
+cmake ${COMMON_OPTIONS} -DPCB=X7 -DPCBREV=TPRO ${SRCDIR}
 make -j${JOBS} libsimulator
 rm CMakeCache.txt
 
@@ -114,13 +146,17 @@ cmake ${COMMON_OPTIONS} -DPCB=X10 -DPCBREV=EXPRESS ${SRCDIR}
 make -j${JOBS} libsimulator
 rm CMakeCache.txt
 
-cmake ${COMMON_OPTIONS} -DPCB=X12S ${SRCDIR}
+cmake ${COMMON_OPTIONS} -DPCB=X12S ${SRCDIR} 
 make -j${JOBS} libsimulator
 
-make -j${JOBS} package
-
 if [ "$(uname)" = "Darwin" ]; then
-    cp *.dmg ${OUTDIR}
+    make -j${JOBS} package
+    cp *.dmg "${OUTDIR}"
+elif [ "$(uname)" = "Linux" ]; then
+    make -j${JOBS} package
+    cp *.deb "${OUTDIR}"
 else
-    cp *.deb ${OUTDIR}
+    cmake ${COMMON_OPTIONS} -DWIN_DO_FULL_INSTALL=YES ${SRCDIR} 
+    make -j${JOBS} installer
+    cp companion/*.exe "${OUTDIR}"
 fi

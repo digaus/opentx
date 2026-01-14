@@ -111,8 +111,10 @@ class ReceiverSettings {
     uint8_t pwmRate;
     uint8_t fport;
     uint8_t enablePwmCh5Ch6;
+    uint8_t fport2;
     uint8_t outputsCount;
     uint8_t outputsMapping[24];
+    uint8_t sbus24;
 };
 
 class BindInformation {
@@ -215,25 +217,36 @@ typedef Dsm2SerialPulsesData Dsm2PulsesData;
 PACK(struct Dsm2TimerPulsesData {
   pulse_duration_t pulses[MAX_PULSES_TRANSITIONS];
   pulse_duration_t * ptr;
-  uint16_t rest;
   uint8_t index;
 });
 typedef Dsm2TimerPulsesData Dsm2PulsesData;
 #endif
 
-#define PPM_PERIOD_HALF_US(module)   ((g_model.moduleData[module].ppm.frameLength * 5 + 225) * 200) /*half us*/
-#define PPM_PERIOD(module)           (PPM_PERIOD_HALF_US(module) / 2000) /*ms*/
+#define PPM_DEF_PERIOD               225 /* 22.5ms */
+#define PPM_STEP_SIZE                5 /*0.5ms*/
+#define PPM_PERIOD_HALF_US(module)   ((g_model.moduleData[module].ppm.frameLength * PPM_STEP_SIZE + PPM_DEF_PERIOD) * 200) /*half us*/
+#define PPM_PERIOD(module)           (PPM_PERIOD_HALF_US(module) / 2) /*us*/
 #define DSM2_BAUDRATE                125000
-#define DSM2_PERIOD                  22 /*ms*/
+#define DSM2_PERIOD                  22000 /*us*/
 #define SBUS_BAUDRATE                100000
-#define SBUS_PERIOD_HALF_US          ((g_model.moduleData[EXTERNAL_MODULE].sbus.refreshRate * 5 + 225) * 200) /*half us*/
-#define SBUS_PERIOD                  (SBUS_PERIOD_HALF_US / 2000) /*ms*/
+#define SBUS_MIN_PERIOD              60  /*6.0ms 1/10ms*/
+#define SBUS_MAX_PERIOD              325 /*Overflows uint16_t if set higher*/
+#define SBUS_DEF_PERIOD              225
+#define SBUS_STEPSIZE                5   /* SBUS Step Size 0.5ms */
+#define SBUS_PERIOD_HALF_US          ((g_model.moduleData[EXTERNAL_MODULE].sbus.refreshRate * SBUS_STEPSIZE + SBUS_DEF_PERIOD) * 200) /*half us*/
+#define SBUS_PERIOD                  (SBUS_PERIOD_HALF_US / 2) /*us*/
 #define MULTIMODULE_BAUDRATE         100000
-#define MULTIMODULE_PERIOD           7 /*ms*/
+#define MULTIMODULE_PERIOD           7000 /*us*/
 
 #define CROSSFIRE_FRAME_MAXLEN         64
 PACK(struct CrossfirePulsesData {
   uint8_t pulses[CROSSFIRE_FRAME_MAXLEN];
+  uint8_t length;
+});
+
+#define GHOST_FRAME_MAXLEN             16
+PACK(struct GhostPulsesData {
+  uint8_t pulses[GHOST_FRAME_MAXLEN];
   uint8_t length;
 });
 
@@ -253,6 +266,8 @@ union InternalModulePulsesData {
 #if defined(MULTIMODULE) //&& defined(INTMODULE_USART)
   UartMultiPulses multi;
 #endif
+
+  CrossfirePulsesData crossfire;
 
 #if defined(INTERNAL_MODULE_PPM)
   PpmPulsesData<pulse_duration_t> ppm;
@@ -286,6 +301,8 @@ union ExternalModulePulsesData {
   PpmPulsesData<pulse_duration_t> ppm;
 
   CrossfirePulsesData crossfire;
+
+  GhostPulsesData ghost;
 } __ALIGNED(4);
 
 /* The __ALIGNED keyword is required to align the struct inside the modulePulsesData below,
@@ -306,10 +323,15 @@ extern TrainerPulsesData trainerPulsesData;
 
 #if defined(HARDWARE_INTERNAL_MODULE)
 bool setupPulsesInternalModule();
+void stopPulsesInternalModule();
 #endif
+#if defined(HARDWARE_EXTERNAL_MODULE)
 bool setupPulsesExternalModule();
+void stopPulsesExternalModule();
+#endif
 void setupPulsesDSM2();
-void setupPulsesCrossfire();
+void setupPulsesCrossfire(uint8_t module);
+void setupPulsesGhost();
 void setupPulsesMultiExternalModule();
 void setupPulsesMultiInternalModule();
 void setupPulsesSbus();
@@ -343,7 +365,9 @@ inline void startPulses()
   setupPulsesInternalModule();
 #endif
 
+#if defined(HARDWARE_EXTERNAL_MODULE)
   setupPulsesExternalModule();
+#endif
 
 #if defined(HARDWARE_EXTRA_MODULE)
   extramodulePpmStart();
@@ -364,7 +388,8 @@ enum ChannelsProtocols {
   PROTOCOL_CHANNELS_SBUS,
   PROTOCOL_CHANNELS_PXX2_LOWSPEED,
   PROTOCOL_CHANNELS_PXX2_HIGHSPEED,
-  PROTOCOL_CHANNELS_AFHDS3
+  PROTOCOL_CHANNELS_AFHDS3,
+  PROTOCOL_CHANNELS_GHOST
 };
 
 inline void stopPulses()
@@ -375,7 +400,11 @@ inline void stopPulses()
 
 inline bool pulsesStarted()
 {
+#if defined(RADIO_FAMILY_TBS)
+  return moduleState[1].protocol != PROTOCOL_CHANNELS_UNINITIALIZED;;
+#else
   return moduleState[0].protocol != PROTOCOL_CHANNELS_UNINITIALIZED;
+#endif
 }
 
 inline void pausePulses()

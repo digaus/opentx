@@ -1,4 +1,4 @@
-/*
+﻿/*
  * Copyright (C) OpenTX
  *
  * Based on code named
@@ -39,7 +39,7 @@ static int luaModelGetInfo(lua_State *L)
 {
   lua_newtable(L);
   lua_pushtablezstring(L, "name", g_model.header.name);
-#if LCD_DEPTH > 1
+#if LCD_DEPTH > 1 && !defined(MODEL_HAVE_NO_BITMAP)
   lua_pushtablenzstring(L, "bitmap", g_model.header.bitmap);
 #endif
   return 1;
@@ -70,7 +70,7 @@ static int luaModelSetInfo(lua_State *L)
       memcpy(modelHeaders[g_eeGeneral.currModel].name, g_model.header.name, sizeof(g_model.header.name));
 #endif
     }
-#if LCD_DEPTH > 1
+#if LCD_DEPTH > 1 && !defined(MODEL_HAVE_NO_BITMAP)
     else if (!strcmp(key, "bitmap")) {
       const char * name = luaL_checkstring(L, -1);
       strncpy(g_model.header.bitmap, name, sizeof(g_model.header.bitmap));
@@ -120,11 +120,11 @@ Get RF module parameters
  * `channelsCount` (number) number of channels sent to module
  * `Type` (number) module type
  * if the module type is Multi additional information are available
- * `protocol` (number) protocol number
- * `subProtocol` (number) sub-protocol number
- * `channelsOrder` (number) first 4 channels expected order
+ * `protocol` (number) protocol number (Multi only)
+ * `subProtocol` (number) sub-protocol number (Multi only)
+ * `channelsOrder` (number) first 4 channels expected order (Multi only)
 
-@status current Introduced in TODO
+@status current Introduced in 2.2.0
 */
 static int luaModelGetModule(lua_State *L)
 {
@@ -135,7 +135,7 @@ static int luaModelGetModule(lua_State *L)
     lua_pushtableinteger(L, "subType", module.subType);
     lua_pushtableinteger(L, "modelId", g_model.header.modelId[idx]);
     lua_pushtableinteger(L, "firstChannel", module.channelsStart);
-    lua_pushtableinteger(L, "channelsCount", module.channelsCount + 8);
+    lua_pushtableinteger(L, "channelsCount", module.getChannelsCount());
     lua_pushtableinteger(L, "Type", module.type);
 #if defined(MULTIMODULE)
     if (module.type == MODULE_TYPE_MULTIMODULE) {
@@ -174,13 +174,16 @@ Set RF module parameters
 @notice If a parameter is missing from the value, then
 that parameter remains unchanged.
 
-@status current Introduced in TODO
+@status current Introduced in 2.2.0, modified in 2.3.12 (proto/subproto)
 */
 static int luaModelSetModule(lua_State *L)
 {
   unsigned int idx = luaL_checkunsigned(L, 1);
 
   if (idx < NUM_MODULES) {
+    int protocol = -1;
+    int subprotocol = -1;
+
     ModuleData & module = g_model.moduleData[idx];
     luaL_checktype(L, -1, LUA_TTABLE);
     for (lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1)) {
@@ -201,7 +204,22 @@ static int luaModelSetModule(lua_State *L)
       else if (!strcmp(key, "channelsCount")) {
         module.channelsCount = luaL_checkinteger(L, -1) - 8;
       }
+#if defined(MULTIMODULE)
+      if (!strcmp(key, "protocol")) {
+        protocol = luaL_checkinteger(L, -1);
+      }
+      if (!strcmp(key, "subProtocol")) {
+        subprotocol = luaL_checkinteger(L, -1);
+      }
+#endif
     }
+#if defined(MULTIMODULE)
+    if (protocol > 0 && subprotocol >= 0) {  // Both are needed to compute otx protocol
+      convertMultiProtocolToOtx(&protocol, &subprotocol);
+      g_model.moduleData[idx].setMultiProtocol(protocol - 1);
+      g_model.moduleData[idx].subType = subprotocol;
+    }
+#endif
     storageDirty(EE_MODEL);
   }
   return 0;
@@ -364,6 +382,136 @@ static int luaModelGetInputsCount(lua_State *L)
 }
 
 /*luadoc
+@function model.deleteFlightModes()
+
+Clear all flightModes
+
+@status current Introduced in 2.3.10
+*/
+static int luaModelDeleteFlightModes(lua_State *L)
+{
+  memset(g_model.flightModeData, 0, sizeof(g_model.flightModeData));
+  return 0;
+}
+
+/*luadoc
+@function model.getFlightMode(index)
+
+@param index (unsigned number) flight mode number (use 0 for FM0)
+
+Return input data for given input and line number
+
+@retval nil requested input or line does not exist
+
+@retval table input data:
+ * `name` (string) input line name
+ * `switch` (number) input switch index
+ * `fadeIn` (number) fade in value (in 0.1s)
+ * `fadeOut` (number) fade out value (in 0.1s)
+ * `trimsValues` (table) table of trim values:
+   * `key` is trim number (zero based)
+   * `value` is trim value
+ * `trimsModes` (table) table of trim mode:
+   * `key` is trim number (zero based)
+   * `value` is trim mode
+
+@status current Introduced in 2.3.10
+*/
+static int luaModelGetFlightMode(lua_State * L)
+{
+  unsigned int idx = luaL_checkunsigned(L, 1);
+  if (idx < MAX_FLIGHT_MODES) {
+    FlightModeData * fm = flightModeAddress(idx);
+    lua_newtable(L);
+    lua_pushtablezstring(L, "name", fm->name);
+    lua_pushtableinteger(L, "switch", fm->swtch);
+    lua_pushtableinteger(L, "fadeIn", fm->fadeIn);
+    lua_pushtableinteger(L, "fadeOut", fm->fadeOut);
+    lua_pushstring(L, "trimsValues");
+    lua_newtable(L);
+    for (uint8_t i = 0; i < NUM_TRIMS; i++) {
+      lua_pushinteger(L, i);
+      lua_pushinteger(L, fm->trim[i].value);
+      lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+    lua_pushstring(L, "trimsModes");
+    lua_newtable(L);
+    for (uint8_t i = 0; i < NUM_TRIMS; i++) {
+      lua_pushinteger(L, i);
+      lua_pushinteger(L, fm->trim[i].mode);
+      lua_settable(L, -3);
+    }
+    lua_settable(L, -3);
+  }
+  else {
+    lua_pushnil(L);
+  }
+  return 1;
+}
+
+/*luadoc
+@function model.setFlightMode(index, params)
+
+Set Flight mode parameters
+
+@param index (unsigned number) flight mode number (use 0 for FM0)
+
+@param params see model.getFlightMode return format for table format.
+
+@status current Introduced in 2.3.10
+*/
+static int luaModelSetFlightMode(lua_State * L)
+{
+  unsigned int flightMode = luaL_checkunsigned(L, 1);
+
+  if (flightMode >= MAX_FLIGHT_MODES) {
+    lua_pushinteger(L, 2);
+    return 1;
+  }
+  FlightModeData * fm = flightModeAddress(flightMode);
+  luaL_checktype(L, -1, LUA_TTABLE);
+  for (lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1)) {
+    luaL_checktype(L, -2, LUA_TSTRING); // key is string
+    const char * key = luaL_checkstring(L, -2);
+    if (!strcmp(key, "name")) {
+      const char * name = luaL_checkstring(L, -1);
+      str2zchar(fm->name, name, sizeof(fm->name));
+    }
+    else if (!strcmp(key, "switch")) {
+      fm->swtch = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "fadeIn")) {
+      fm->fadeIn = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "fadeOut")) {
+      fm->fadeOut = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "trimsValues")) {
+      luaL_checktype(L, -1, LUA_TTABLE);
+      uint8_t idx = 0;
+      for (lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1), idx++) {
+        int16_t val = luaL_checkinteger(L, -1);
+        if (idx < NUM_TRIMS)
+          fm->trim[idx].value = (val & 0x3FF);
+      }
+    }
+    else if (!strcmp(key, "trimsModes")) {
+      luaL_checktype(L, -1, LUA_TTABLE);
+      uint8_t idx = 0;
+      for (lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1), idx++) {
+        uint16_t val = luaL_checkinteger(L, -1);
+        if (idx < NUM_TRIMS)
+          fm->trim[idx].mode = (val & 0x1F);
+      }
+    }
+  }
+  storageDirty(EE_MODEL);
+  lua_pushinteger(L, 0);
+  return 1;
+}
+
+/*luadoc
 @function model.getInput(input, line)
 
 Return input data for given input and line number
@@ -376,15 +524,17 @@ Return input data for given input and line number
 
 @retval table input data:
  * `name` (string) input line name
+ * `inputName` (string) input input name
  * `source` (number) input source index
  * `weight` (number) input weight
  * `offset` (number) input offset
  * `switch` (number) input switch index
  * `curveType` (number) curve type (function, expo, custom curve)
  * `curveValue` (number) curve index
- * `carryTrim` (boolean) input trims applied
+ * 'trimSource' (number) a positive number representing trim source
+ * 'flightModes' (number) bit-mask of active flight modes
 
-@status current Introduced in 2.0.0, curveType/curveValue/carryTrim added in 2.3
+@status current Introduced in 2.0.0, curveType/curveValue/carryTrim added in 2.3, inputName added 2.3.10, flighmode reworked in 2.3.11, broken carryTrim replaced by trimSource in 2.3.16
 */
 static int luaModelGetInput(lua_State *L)
 {
@@ -396,13 +546,15 @@ static int luaModelGetInput(lua_State *L)
     ExpoData * expo = expoAddress(first+idx);
     lua_newtable(L);
     lua_pushtablezstring(L, "name", expo->name);
+    lua_pushtablezstring(L, "inputName", g_model.inputNames[chn]);
     lua_pushtableinteger(L, "source", expo->srcRaw);
     lua_pushtableinteger(L, "weight", expo->weight);
     lua_pushtableinteger(L, "offset", expo->offset);
     lua_pushtableinteger(L, "switch", expo->swtch);
     lua_pushtableinteger(L, "curveType", expo->curve.type);
     lua_pushtableinteger(L, "curveValue", expo->curve.value);
-    lua_pushtableinteger(L, "carryTrim", expo->carryTrim);
+    lua_pushtableinteger(L, "trimSource", - expo->trimSource);
+    lua_pushtableinteger(L, "flightModes", expo->flightModes);
   }
   else {
     lua_pushnil(L);
@@ -421,7 +573,7 @@ Insert an Input at specified line
 
 @param value (table) input data, see model.getInput()
 
-@status current Introduced in 2.0.0, curveType/curveValue/carryTrim added in 2.3
+@status current Introduced in 2.0.0, curveType/curveValue/carryTrim added in 2.3, inputName added 2.3.10, broken carryTrim replaced by trimSource in 2.3.16
 */
 static int luaModelInsertInput(lua_State *L)
 {
@@ -444,6 +596,10 @@ static int luaModelInsertInput(lua_State *L)
         const char * name = luaL_checkstring(L, -1);
         str2zchar(expo->name, name, sizeof(expo->name));
       }
+      else if (!strcmp(key, "inputName")) {
+        const char * name = luaL_checkstring(L, -1);
+        str2zchar(g_model.inputNames[chn], name, LEN_INPUT_NAME);
+      }
       else if (!strcmp(key, "source")) {
         expo->srcRaw = luaL_checkinteger(L, -1);
       }
@@ -462,8 +618,11 @@ static int luaModelInsertInput(lua_State *L)
       else if (!strcmp(key, "curveValue")) {
         expo->curve.value = luaL_checkinteger(L, -1);
       }
-      else if (!strcmp(key, "carryTrim")) {
-        expo->carryTrim = lua_toboolean(L, -1);
+      else if (!strcmp(key, "trimSource")) {
+        expo->trimSource = - luaL_checkinteger(L, -1);
+      }
+      else if (!strcmp(key, "flightModes")) {
+        expo->flightModes = luaL_checkinteger(L, -1);
       }
     }
   }
@@ -761,13 +920,13 @@ Get Logical Switch parameters
 @retval nil requested logical switch does not exist
 
 @retval table logical switch data:
- * `func` (number) function index
- * `v1` (number) V1 value (index)
- * `v2` (number) V2 value (index or value)
- * `v3` (number) V3 value (index or value)
- * `and` (number) AND switch index
- * `delay` (number) delay (time in 1/10 s)
- * `duration` (number) duration (time in 1/10 s)
+  * `func` (number) function index
+  * `v1` (number) V1 value (index)
+  * `v2` (number) V2 value (index or value)
+  * `v3` (number) V3 value (index or value)
+  * `and` (number) AND switch index
+  * `delay` (number) delay (time in 1/10 s)
+  * `duration` (number) duration (time in 1/10 s)
 
 @status current Introduced in 2.0.0
 */
@@ -926,15 +1085,16 @@ Set Curve parameters
 
 The first and last x value must -100 and 100 and x values must be monotonically increasing
 
-@retval  0 - Everything okay
-         1 - Wrong number of points
-         2 - Invalid Curve number
-         3 - Cuve does not fit anymore
-         4 - point of out of index
-         5 - x value not monotonically increasing
-         6 - y value not in range [-100;100]
-         7 - extra values for y are set
-         8 - extra values for x are set
+@retval curve status data:
+  * 0 - Everything okay
+  * 1 - Wrong number of points
+  * 2 - Invalid Curve number
+  * 3 - Cuve does not fit anymore
+  * 4 - point of out of index
+  * 5 - x value not monotonically increasing
+  * 6 - y value not in range [-100;100]
+  * 7 - extra values for y are set
+  * 8 - extra values for x are set
 
 @status current Introduced in 2.2.0
 
@@ -997,7 +1157,7 @@ static int luaModelSetCurve(lua_State *L)
       bool isX = !strcmp(key, "x");
 
       for (lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1)) {
-        int idx = luaL_checkinteger(L, -2)-1;
+        int idx = luaL_checkinteger(L, -2) - 1;
         if (idx < 0 || idx > MAX_POINTS_PER_CURVE) {
           lua_pushinteger(L, 4);
           return 1;
@@ -1373,16 +1533,16 @@ Get Telemetry Sensor parameters
 
 @param sensor (unsigned number) sensor number (use 0 for sensor 1)
 
-@retval nil requested logical switch does not exist
+@retval nil requested sensor does not exist
 
-@retval table logical switch data:
- * `func` (number) function index
- * `v1` (number) V1 value (index)
- * `v2` (number) V2 value (index or value)
- * `v3` (number) V3 value (index or value)
- * `and` (number) AND switch index
- * `delay` (number) delay (time in 1/10 s)
- * `duration` (number) duration (time in 1/10 s)
+@retval table with sensor data:
+ * `type` (number) 0 = custom, 1 = calculated
+ * `name` (string) Name
+ * `unit` (number) See list of units in the appendix of the OpenTX Lua Reference Guide
+ * `prec` (number) Number of decimals
+ * `id`   (number) Only custom sensors
+ * `instance` (number) Only custom sensors
+ * `formula` (number) Only calculated sensors. 0 = Add etc. see list of formula choices in Companion popup
 
 @status current Introduced in 2.3.0
 */
@@ -1410,6 +1570,102 @@ static int luaModelGetSensor(lua_State *L)
   return 1;
 }
 
+/*luadoc
+@function model.resetSensor(sensor)
+
+Reset Telemetry Sensor parameters
+
+@param sensor (unsigned number) sensor number (use 0 for sensor 1)
+
+@retval nil
+
+@status current Introduced in 2.3.11
+*/
+static int luaModelResetSensor(lua_State *L)
+{
+  unsigned int idx = luaL_checkunsigned(L, 1);
+  if (idx < MAX_TELEMETRY_SENSORS) {
+    telemetryItems[idx].clear();
+  }
+
+  lua_pushnil(L);
+  return 1;
+}
+/*luadoc
+@function model.getSwashRing(params)
+Get heli swash parameters
+
+@param params (table):
+* `type` (number) 0=---, 1=120, 2=120X, 3=140, 4=90
+* `value` (number) swash ring value (normally 0)
+* 'collectiveSource' (number) source index
+* 'aileronSource' (number) source index
+* 'elevatorSource' (number) source index
+* 'collectiveWeight'(value) -100 to 100
+* 'aileronWeight' (value) -100 to 100
+* 'elevatorWeight' (value) -100 to 100
+
+ @status current Introduced in 2.3.15
+*/
+static int luaModelGetSwashRing(lua_State *L)
+{
+  lua_newtable(L);
+  lua_pushtableinteger(L, "type", g_model.swashR.type);
+  lua_pushtableinteger(L, "value", g_model.swashR.value);
+  lua_pushtableinteger(L, "collectiveSource", g_model.swashR.collectiveSource);
+  lua_pushtableinteger(L, "aileronSource", g_model.swashR.aileronSource);
+  lua_pushtableinteger(L, "elevatorSource", g_model.swashR.elevatorSource);
+  lua_pushtableinteger(L, "collectiveWeight", g_model.swashR.collectiveWeight);
+  lua_pushtableinteger(L, "aileronWeight", g_model.swashR.aileronWeight);
+  lua_pushtableinteger(L, "elevatorWeight", g_model.swashR.elevatorWeight);
+
+  return 1;
+}
+/*luadoc
+@function model.setSwashRing(params)
+Set heli swash parameters
+
+@param value (table) swash ring parameters, see model.getSwashRing() for table format
+
+@notice If a parameter is missing, then that parameter remains unchanged.
+
+@status current Introduced in 2.3.15
+*/
+static int luaModelSetSwashRing(lua_State *L)
+{
+  luaL_checktype(L, -1, LUA_TTABLE);
+  for (lua_pushnil(L); lua_next(L, -2); lua_pop(L, 1)) {
+    luaL_checktype(L, -2, LUA_TSTRING); // key is string
+    const char * key = luaL_checkstring(L, -2);
+    if (!strcmp(key, "type")) {
+      g_model.swashR.type = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "value")) {
+      g_model.swashR.value = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "collectiveSource")) {
+      g_model.swashR.collectiveSource = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "aileronSource")) {
+      g_model.swashR.aileronSource = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "elevatorSource")) {
+      g_model.swashR.elevatorSource = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "collectiveWeight")) {
+      g_model.swashR.collectiveWeight = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "aileronWeight")) {
+      g_model.swashR.aileronWeight = luaL_checkinteger(L, -1);
+    }
+    else if (!strcmp(key, "elevatorWeight")) {
+      g_model.swashR.elevatorWeight = luaL_checkinteger(L, -1);
+    }
+  }
+  storageDirty(EE_MODEL);
+  return 0;
+}
+
 const luaL_Reg modelLib[] = {
   { "getInfo", luaModelGetInfo },
   { "setInfo", luaModelSetInfo },
@@ -1418,6 +1674,9 @@ const luaL_Reg modelLib[] = {
   { "getTimer", luaModelGetTimer },
   { "setTimer", luaModelSetTimer },
   { "resetTimer", luaModelResetTimer },
+  { "deleteFlightModes", luaModelDeleteFlightModes },
+  { "getFlightMode", luaModelGetFlightMode },
+  { "setFlightMode", luaModelSetFlightMode },
   { "getInputsCount", luaModelGetInputsCount },
   { "getInput", luaModelGetInput },
   { "insertInput", luaModelInsertInput },
@@ -1440,5 +1699,8 @@ const luaL_Reg modelLib[] = {
   { "getGlobalVariable", luaModelGetGlobalVariable },
   { "setGlobalVariable", luaModelSetGlobalVariable },
   { "getSensor", luaModelGetSensor },
-  { NULL, NULL }  /* sentinel */
+  { "resetSensor", luaModelResetSensor },
+  { "getSwashRing", luaModelGetSwashRing },
+  { "setSwashRing", luaModelSetSwashRing },
+  { nullptr, nullptr }  /* sentinel */
 };

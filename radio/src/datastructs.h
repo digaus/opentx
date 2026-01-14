@@ -98,7 +98,7 @@ PACK(struct ExpoData {
   uint16_t mode:2;
   uint16_t scale:14;
   uint16_t srcRaw:10;
-  int16_t  carryTrim:6;
+  int16_t  trimSource:6;
   uint32_t chn:5;
   int32_t  swtch:9;
   uint32_t flightModes:9;
@@ -390,7 +390,7 @@ PACK(struct TelemetrySensor {
  */
 
 PACK(struct TrainerModuleData {
-  uint8_t mode:3;
+  uint8_t mode:3;         //  TODO: simplify value at an eeprom change refer compile driven enum handling in dataconstants.h
   uint8_t spare1:5;
   uint8_t channelsStart;
   int8_t  channelsCount; // 0=8 channels
@@ -450,8 +450,13 @@ PACK(struct ModuleData {
       uint8_t spare2:1;
       int8_t refreshRate;  // definition as framelength for ppm (* 5 + 225 = time in 1/10 ms)
     } sbus);
+    NOBACKUP(struct {
+      uint8_t raw12bits:1;
+      uint8_t spare1:7;
+    } ghost);
     NOBACKUP(PACK(struct {
-      uint8_t receivers; // 5 bits spare
+      uint8_t receivers:7; // 4 bits spare
+      uint8_t racingMode:1;
       char receiverName[PXX2_MAX_RECEIVERS_PER_MODULE][PXX2_LEN_RX_NAME];
     }) pxx2);
     NOBACKUP(PACK(struct {
@@ -475,13 +480,20 @@ PACK(struct ModuleData {
   };
 
   // Helper functions to set both of the rfProto protocol at the same time
-  NOBACKUP(inline uint8_t getMultiProtocol() {
+  NOBACKUP(inline uint8_t getMultiProtocol() const
+  {
     return ((uint8_t) (rfProtocol & 0x0F)) + (multi.rfProtocolExtra << 4);
   })
 
-  NOBACKUP(inline void setMultiProtocol(uint8_t proto) {
+  NOBACKUP(inline void setMultiProtocol(uint8_t proto)
+  {
     rfProtocol = (uint8_t) (proto & 0x0F);
     multi.rfProtocolExtra = (proto & 0x70) >> 4;
+  })
+
+  NOBACKUP(inline uint8_t getChannelsCount() const
+  {
+    return channelsCount + 8;
   })
 });
 
@@ -509,7 +521,7 @@ typedef uint32_t swarnstate_t;
 typedef uint64_t swconfig_t;
 typedef uint64_t swarnstate_t;
 typedef uint32_t swarnenable_t;
-#elif defined(PCBX9D) || defined(PCBX9DP)
+#elif defined(PCBX9D) || defined(PCBX9DP) || defined(RADIO_TPRO)
 typedef uint32_t swconfig_t;
 typedef uint32_t swarnstate_t;
 typedef uint16_t swarnenable_t; // TODO remove it in 2.4
@@ -565,6 +577,18 @@ PACK(struct CustomScreenData {
   #define SCRIPT_DATA
 #endif
 
+#if defined(FUNCTION_SWITCHES) && NUM_FUNCTIONS_SWITCHES < 8
+  #define FUNCTION_SWITCHS_FIELDS \
+    uint16_t functionSwitchConfig;  \
+    uint16_t functionSwitchGroup; \
+    uint16_t functionSwitchStartConfig; \
+    uint8_t functionSwitchLogicalState;  \
+    char switchNames[NUM_FUNCTIONS_SWITCHES][LEN_SWITCH_NAME];
+#else
+  #define FUNCTION_SWITCHS_FIELDS
+#endif
+
+
 PACK(struct ModelData {
   ModelHeader header;
   TimerData timers[MAX_TIMERS];
@@ -605,8 +629,9 @@ PACK(struct ModelData {
 
   NOBACKUP(RssiAlarmData rssiAlarms);
 
-  NOBACKUP(uint8_t spare1:6);
-  NOBACKUP(uint8_t potsWarnMode:2);
+  uint8_t spare1:3;
+  uint8_t thrTrimSw:3;
+  uint8_t potsWarnMode:2;
 
   ModuleData moduleData[NUM_MODULES];
   int16_t failsafeChannels[MAX_OUTPUT_CHANNELS];
@@ -625,6 +650,22 @@ PACK(struct ModelData {
   CUSTOM_SCREENS_DATA
 
   char modelRegistrationID[PXX2_LEN_REGISTRATION_ID];
+
+  FUNCTION_SWITCHS_FIELDS
+
+
+  uint8_t getThrottleStickTrimSource() const
+  {
+    // The order here is TERA, so that 0 (default) means Throttle
+    switch (thrTrimSw) {
+      case 0:
+        return MIXSRC_TrimThr;
+      case 2:
+        return MIXSRC_TrimRud;
+      default:
+        return thrTrimSw + MIXSRC_FIRST_TRIM;
+    }
+  }
 });
 
 /*
@@ -690,6 +731,14 @@ PACK(struct TrainerData {
   #else
     #define BLUETOOTH_FIELDS
   #endif
+
+#if defined(EEPROM_SDCARD)
+  #define MODEL_FILE_NAME_FIELD \
+  NOBACKUP(char currModelFilename[LEN_MODEL_FILENAME+1]);
+#else
+  #define MODEL_FILE_NAME_FIELD
+#endif
+
   #define EXTRA_GENERAL_FIELDS \
     uint8_t  auxSerialMode:4; \
     uint8_t  slidersConfig:4; \
@@ -697,8 +746,9 @@ PACK(struct TrainerData {
     uint8_t  backlightColor; \
     swarnstate_t switchUnlockStates; \
     swconfig_t switchConfig; \
-    char switchNames[STORAGE_NUM_SWITCHES][LEN_SWITCH_NAME]; \
+    char switchNames[STORAGE_NUM_SWITCHES - NUM_FUNCTIONS_SWITCHES][LEN_SWITCH_NAME]; \
     char anaNames[NUM_STICKS+STORAGE_NUM_POTS+STORAGE_NUM_SLIDERS][LEN_ANA_NAME]; \
+    MODEL_FILE_NAME_FIELD \
     BLUETOOTH_FIELDS
 #elif defined(PCBSKY9X)
   #define EXTRA_GENERAL_FIELDS \
@@ -732,6 +782,14 @@ PACK(struct TrainerData {
   #define BUZZER_FIELD int8_t spare4:2
 #endif
 
+#if defined(RADIO_FAMILY_TBS)
+  #define POWER_ON_SPEED    (1 + pwrOnSpeed)
+  #define POWER_OFF_SPEED   (1 + pwrOffSpeed)
+#else
+  #define POWER_ON_SPEED    (2 - pwrOnSpeed)
+  #define POWER_OFF_SPEED   (2 - pwrOffSpeed)
+#endif
+
 PACK(struct RadioData {
   NOBACKUP(uint8_t version);
   NOBACKUP(uint16_t variant);
@@ -745,7 +803,7 @@ PACK(struct RadioData {
   int8_t antennaMode:2;
   uint8_t disableRtcWarning:1;
   uint8_t keysBacklight:1;
-  int8_t spare1:1;
+  int8_t rotEncDirection:1;
   NOBACKUP(TrainerData trainer);
   NOBACKUP(uint8_t view);            // index of view in main screen
   NOBACKUP(BUZZER_FIELD); /* 2bits */
@@ -807,6 +865,16 @@ PACK(struct RadioData {
   char ownerRegistrationID[PXX2_LEN_REGISTRATION_ID];
 
   GYRO_FIELDS
+
+  NOBACKUP(uint8_t getPwrOnSpeed() const
+  {
+    return POWER_ON_SPEED;
+  });
+
+  NOBACKUP(uint8_t getPwrOffSpeed() const
+  {
+    return POWER_OFF_SPEED;
+  });
 });
 
 #undef SWITCHES_WARNING_DATA
@@ -817,6 +885,7 @@ PACK(struct RadioData {
 #undef SPLASH_MODE
 #undef EXTRA_GENERAL_FIELDS
 #undef THEME_DATA
+#undef ROTARY_MODE
 #undef NOBACKUP
 
 
@@ -928,6 +997,15 @@ static inline void check_struct()
 #elif defined(PCBXLITE)
   CHKSIZE(RadioData, 858);
   CHKSIZE(ModelData, 6157);
+#elif defined(RADIO_TANGO)
+  CHKSIZE(RadioData, 846);
+  CHKSIZE(ModelData, 6155);
+#elif defined(RADIO_MAMBO)
+  CHKSIZE(RadioData, 864);
+  CHKSIZE(ModelData, 6157);
+#elif defined(RADIO_TPRO)
+  CHKSIZE(RadioData, 845);
+  CHKSIZE(ModelData, 6185);
 #elif defined(PCBX7)
   CHKSIZE(RadioData, 864);
   CHKSIZE(ModelData, 6157);
@@ -947,4 +1025,4 @@ static inline void check_struct()
 
 #undef CHKSIZE
 }
-#endif /* BACKUP */ 
+#endif /* BACKUP */

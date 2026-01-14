@@ -18,22 +18,33 @@
  * GNU General Public License for more details.
  */
 
-#ifndef MODELDATA_H
-#define MODELDATA_H
+#pragma once
 
 #include "constants.h"
+#include "curvedata.h"
 #include "customfunctiondata.h"
 #include "gvardata.h"
-#include "io_data.h"
+#include "flightmodedata.h"
+#include "heli_data.h"
+#include "input_data.h"
 #include "logicalswitchdata.h"
+#include "mixdata.h"
 #include "moduledata.h"
+#include "output_data.h"
 #include "sensordata.h"
 #include "telem_data.h"
+#include "timerdata.h"
+#include "generalsettings.h"
 
 #include <QtCore>
 
 class GeneralSettings;
 class RadioDataConversionState;
+class AbstractStaticItemModel;
+
+constexpr char AIM_MODELDATA_TRAINERMODE[]  {"modeldata.trainermode"};
+constexpr char AIM_MODELDATA_FUNCSWITCHCONFIG[]  {"modeldata.funcswitchconfig"};
+constexpr char AIM_MODELDATA_FUNCSWITCHSTART[]  {"modeldata.funcswitchstart"};
 
 #define CHAR_FOR_NAMES " ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-."
 #define CHAR_FOR_NAMES_REGEX "[ A-Za-z0-9_.-,]*"
@@ -49,32 +60,6 @@ class RSSIAlarmData {
       this->critical = 42;
       this->disabled = false;
     }
-};
-
-#define TIMER_NAME_LEN 8
-
-class TimerData {
-  Q_DECLARE_TR_FUNCTIONS(TimerData)
-
-  public:
-    enum CountDownMode {
-      COUNTDOWN_SILENT,
-      COUNTDOWN_BEEPS,
-      COUNTDOWN_VOICE,
-      COUNTDOWN_HAPTIC
-    };
-    TimerData() { clear(); }
-    RawSwitch    mode;
-    char         name[TIMER_NAME_LEN+1];
-    bool         minuteBeep;
-    unsigned int countdownBeep;
-    unsigned int val;
-    unsigned int persistent;
-    int          pvalue;
-    void clear() { memset(reinterpret_cast<void *>(this), 0, sizeof(TimerData)); mode = RawSwitch(SWITCH_TYPE_TIMER_MODE, 0); }
-    void convert(RadioDataConversionState & cstate);
-    bool isEmpty();
-    bool isModeOff() { return mode == RawSwitch(SWITCH_TYPE_TIMER_MODE, 0); }
 };
 
 #define CPN_MAX_SCRIPTS       9
@@ -117,17 +102,19 @@ typedef char TopbarData[216+1];
 #endif
 
 enum TrainerMode {
-  TRAINER_MODE_MASTER_TRAINER_JACK,
-  TRAINER_MODE_SLAVE,
+  TRAINER_MODE_MASTER_JACK,
+  TRAINER_MODE_SLAVE_JACK,
   TRAINER_MODE_MASTER_SBUS_EXTERNAL_MODULE,
   TRAINER_MODE_MASTER_CPPM_EXTERNAL_MODULE,
   TRAINER_MODE_MASTER_BATTERY_COMPARTMENT,
   TRAINER_MODE_MASTER_BLUETOOTH,
   TRAINER_MODE_SLAVE_BLUETOOTH,
-  TRAINER_MODE_MULTI
+  TRAINER_MODE_MULTI,
+  TRAINER_MODE_COUNT
 };
 
 #define INPUT_NAME_LEN 4
+#define CPN_MAX_BITMAP_LEN 14
 
 class ModelData {
   Q_DECLARE_TR_FUNCTIONS(ModelData)
@@ -181,10 +168,12 @@ class ModelData {
     unsigned int thrTraceSrc;
     uint64_t switchWarningStates;
     unsigned int switchWarningEnable;
+    unsigned int thrTrimSwitch;
     unsigned int potsWarningMode;
     bool potsWarnEnabled[CPN_MAX_POTS];
     int potsWarnPosition[CPN_MAX_POTS];
     bool displayChecklist;
+
     GVarData gvarData[CPN_MAX_GVARS];
     MavlinkData mavlink;
     unsigned int telemetryProtocol;
@@ -192,7 +181,7 @@ class ModelData {
     unsigned int  rssiSource;
     RSSIAlarmData rssiAlarms;
 
-    char bitmap[10+1];
+    char bitmap[CPN_MAX_BITMAP_LEN + 1];
 
     unsigned int trainerMode;  // TrainerMode
 
@@ -210,10 +199,34 @@ class ModelData {
 
     char registrationId[8+1];
 
+    enum FunctionSwitchConfig {
+      FUNC_SWITCH_CONFIG_NONE,
+      FUNC_SWITCH_CONFIG_FIRST = FUNC_SWITCH_CONFIG_NONE,
+      FUNC_SWITCH_CONFIG_TOGGLE,
+      FUNC_SWITCH_CONFIG_2POS,
+      FUNC_SWITCH_CONFIG_LAST = FUNC_SWITCH_CONFIG_2POS
+    };
+
+    enum FunctionSwitchStart {
+      FUNC_SWITCH_START_INACTIVE,
+      FUNC_SWITCH_START_FIRST = FUNC_SWITCH_START_INACTIVE,
+      FUNC_SWITCH_START_ACTIVE,
+      FUNC_SWITCH_START_PREVIOUS,
+      FUNC_SWITCH_START_LAST = FUNC_SWITCH_START_PREVIOUS
+    };
+
+    // Function switches
+    unsigned int functionSwitchConfig;
+    unsigned int functionSwitchGroup;
+    unsigned int functionSwitchStartConfig;
+    unsigned int functionSwitchLogicalState;
+    char functionSwitchNames[CPN_MAX_FUNCTION_SWITCHES][HARDWARE_NAME_LEN + 1];
+
     void clear();
     bool isEmpty() const;
     void setDefaultInputs(const GeneralSettings & settings);
     void setDefaultMixes(const GeneralSettings & settings);
+    void setDefaultFunctionSwitches(int functionSwitchCount);
     void setDefaultValues(unsigned int id, const GeneralSettings & settings);
 
     int getTrimValue(int phaseIdx, int trimIdx);
@@ -243,6 +256,8 @@ class ModelData {
     int getChannelsMax(bool forceExtendedLimits=false) const;
 
     bool isAvailable(const RawSwitch & swtch) const;
+    bool isFunctionSwitchPositionAvailable(int index) const;
+    bool isFunctionSwitchSourceAllowed(int index) const;
 
     enum ReferenceUpdateAction {
       REF_UPD_ACT_CLEAR,
@@ -281,6 +296,39 @@ class ModelData {
     bool hasExpoChildren(const int index);
     bool hasExpoSiblings(const int index);
     void removeMix(const int idx);
+    QString thrTraceSrcToString() const;
+    QString thrTraceSrcToString(const int index) const;
+    int thrTraceSrcCount() const;
+    bool isThrTraceSrcAvailable(const GeneralSettings * generalSettings, const int index) const;
+
+    void limitsClear(const int index);
+    void limitsClearAll();
+    void limitsDelete(const int index);
+    void limitsGet(const int index, QByteArray & data);
+    void limitsInsert(const int index);
+    void limitsMove(const int index, const int offset);
+    void limitsSet(const int index, const QByteArray & data);
+
+    QString trainerModeToString() const;
+    static QString trainerModeToString(const int value);
+    static bool isTrainerModeAvailable(const GeneralSettings & generalSettings, const Firmware * firmware, const int value);
+    static AbstractStaticItemModel * trainerModeItemModel(const GeneralSettings & generalSettings, const Firmware * firmware);
+
+    unsigned int getFuncSwitchConfig(unsigned int index) const;
+    void setFuncSwitchConfig(unsigned int index, unsigned int value);
+    static QString funcSwitchConfigToString(unsigned int value);
+    static AbstractStaticItemModel * funcSwitchConfigItemModel();
+
+    unsigned int getFuncSwitchGroup(unsigned int index) const;
+    void setFuncSwitchGroup(unsigned int index, unsigned int value);
+
+    unsigned int getFuncSwitchAlwaysOnGroup(unsigned int index) const;
+    void setFuncSwitchAlwaysOnGroup(unsigned int index, unsigned int value);
+
+    unsigned int getFuncSwitchStart(unsigned int index) const;
+    void setFuncSwitchStart(unsigned int index, unsigned int value);
+    static QString funcSwitchStartToString(unsigned int value);
+    static AbstractStaticItemModel * funcSwitchStartItemModel();
 
   protected:
     void removeGlobalVar(int & var);
@@ -297,6 +345,7 @@ class ModelData {
       int shift;
       int updcnt;
       int maxindex;
+      int occurences;
       RawSourceType srcType;
       RawSwitchType swtchType;
     };
@@ -314,6 +363,7 @@ class ModelData {
     void updateDestCh(MixData * md);
     void updateLimitCurveRef(CurveReference & crv);
     void updateFlightModeFlags(unsigned int & flags);
+    void updateTelemetryRef(int & idx);
     void updateTelemetryRef(unsigned int & idx);
     void updateModuleFailsafes(ModuleData * md);
     inline void updateSourceRef(RawSource & src) { updateTypeIndexRef<RawSource, RawSourceType>(src, updRefInfo.srcType); }
@@ -333,6 +383,6 @@ class ModelData {
       if (value != swtch.toValue())
         value = swtch.toValue();
     }
+    void sortMixes();
+    void updateResetParam(CustomFunctionData * cfd);
 };
-
-#endif // MODELDATA_H

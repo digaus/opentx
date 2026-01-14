@@ -59,7 +59,7 @@ QString RawSwitch::toString(Board::Type board, const GeneralSettings * const gen
     tr("THs"), tr("TH%"), tr("THt")
   };
 
-  const QStringList directionIndicators = QStringList()
+  static const QStringList directionIndicators = QStringList()
       << CPN_STR_SW_INDICATOR_UP
       << CPN_STR_SW_INDICATOR_NEUT
       << CPN_STR_SW_INDICATOR_DN;
@@ -73,9 +73,9 @@ QString RawSwitch::toString(Board::Type board, const GeneralSettings * const gen
     switch(type) {
       case SWITCH_TYPE_SWITCH:
         if (IS_HORUS_OR_TARANIS(board)) {
-          qr = div(index-1, 3);
+          qr = div(index - 1, 3);
           if (generalSettings)
-            swName = QString(generalSettings->switchName[qr.quot]);
+            swName = QString(generalSettings->switchName[qr.quot]).trimmed();
           if (swName.isEmpty())
             swName = Boards::getSwitchInfo(board, qr.quot).name;
           return swName + directionIndicators.at(qr.rem > -1 && qr.rem < directionIndicators.size() ? qr.rem : 1);
@@ -90,9 +90,19 @@ QString RawSwitch::toString(Board::Type board, const GeneralSettings * const gen
         else
           return LogicalSwitchData().nameToString(index-1);
 
+      case SWITCH_TYPE_FUNCTIONSWITCH:
+        if (!Boards::getCapability(board, Board::FunctionSwitches))
+          return CPN_STR_UNKNOWN_ITEM;
+        qr = div(index - 1, 3);
+        if (modelData)
+          swName = QString(modelData->functionSwitchNames[qr.quot]).trimmed();
+        if (swName.isEmpty())
+          swName = tr("SW%1").arg(qr.quot + 1);
+        return swName + directionIndicators.at(qr.rem > -1 && qr.rem < directionIndicators.size() ? qr.rem : 1);
+
       case SWITCH_TYPE_MULTIPOS_POT:
         if (!Boards::getCapability(board, Board::MultiposPotsPositions))
-          return tr("???");
+          return CPN_STR_UNKNOWN_ITEM;
         qr = div(index - 1, Boards::getCapability(board, Board::MultiposPotsPositions));
         if (generalSettings && qr.quot < (int)DIM(generalSettings->potConfig))
           swName = QString(generalSettings->potName[qr.quot]);
@@ -140,7 +150,7 @@ QString RawSwitch::toString(Board::Type board, const GeneralSettings * const gen
         return tr("Telemetry");
 
       default:
-        return tr("???");
+        return CPN_STR_UNKNOWN_ITEM;
     }
   }
 }
@@ -154,6 +164,13 @@ bool RawSwitch::isAvailable(const ModelData * const model, const GeneralSettings
 
   if (type == SWITCH_TYPE_SWITCH && abs(index) > b.getCapability(Board::SwitchPositions))
     return false;
+
+  if (type == SWITCH_TYPE_FUNCTIONSWITCH) {
+    if (!model || abs(index) > b.getCapability(Board::NumFunctionSwitchesPositions))
+      return false;
+    else if (!model->isFunctionSwitchPositionAvailable(abs(index)))
+        return false;
+  }
 
   if (type == SWITCH_TYPE_TRIM && abs(index) > b.getCapability(Board::NumTrimSwitches))
     return false;
@@ -184,77 +201,42 @@ RawSwitch RawSwitch::convert(RadioDataConversionState & cstate)
   RadioDataConversionState::EventType evt = RadioDataConversionState::EVT_NONE;
   RadioDataConversionState::LogField oldData(index, toString(cstate.fromType, cstate.fromGS(), cstate.fromModel()));
 
+  int newIdx = 0;
+
   if (type == SWITCH_TYPE_SWITCH) {
-    int srcIdx = div(abs(index)-1, 3).quot;  // raw source index
-    int delta = 0;
-
-    // SWI to SWR don't exist on !X9E board
-    if (!IS_TARANIS_X9E(cstate.toType) && IS_TARANIS_X9E(cstate.fromType)) {
-      if (srcIdx > 7) {
-        index %= 24;
-        evt = RadioDataConversionState::EVT_CVRT;
-      }
-    }
-
-    // No SE and SG on X7 board
-    if (IS_TARANIS_X7(cstate.toType) && (IS_TARANIS_X9(cstate.fromType) || IS_FAMILY_HORUS_OR_T16(cstate.fromType))) {
-      if (srcIdx == 4 || srcIdx == 5) {
-        delta = 3;  // SE to SD & SF to SF
-        if (srcIdx == 4)
+    div_t swtch = div(abs(index) - 1, 3);  // rawsource index
+    QStringList fromSwitchList(getSwitchList(cstate.fromBoard));
+    QStringList toSwitchList(getSwitchList(cstate.toBoard));
+    // set to -1 if no match found
+    if (swtch.quot < fromSwitchList.count())
+      newIdx = toSwitchList.indexOf(fromSwitchList.at(swtch.quot));
+    else
+      newIdx = -1;
+    // perform forced mapping
+    if (newIdx < 0) {
+      if (IS_TARANIS_X7(cstate.toType) && (IS_TARANIS_X9(cstate.fromType) || IS_FAMILY_HORUS_OR_T16(cstate.fromType))) {
+        // No SE and SG on X7 board
+        newIdx = toSwitchList.indexOf("SD");
+        if (newIdx >= 0)
           evt = RadioDataConversionState::EVT_CVRT;
       }
-      else if (srcIdx == 6) {
-        delta = 9;  // SG to SD
-        evt = RadioDataConversionState::EVT_CVRT;
-      }
-      else if (srcIdx == 7) {
-        delta = 6;  // SH to SH
-      }
-    }
-    else if (IS_JUMPER_T12(cstate.toType) && (IS_TARANIS_X9(cstate.fromType) || IS_FAMILY_HORUS_OR_T16(cstate.fromType))) {
-      if (srcIdx == 4 || srcIdx == 5) {
-        delta = 3;  // SE to SD & SF to SF
-        if (srcIdx == 4)
+      else if (IS_FAMILY_T12(cstate.toType) && (IS_TARANIS_X9(cstate.fromType) || IS_FAMILY_HORUS_OR_T16(cstate.fromType))) {
+        // No SE and SG on T12 board
+        newIdx = toSwitchList.indexOf("SD");
+        if (newIdx >= 0)
           evt = RadioDataConversionState::EVT_CVRT;
       }
-      else if (srcIdx == 6) {
-        delta = 9;  // SG to SD
-        evt = RadioDataConversionState::EVT_CVRT;
-      }
-      else if (srcIdx == 7) {
-        delta = 6;  // SH to SH
-      }
-    }
-    // Compensate for SE and SG on X9/Horus board if converting from X7
-    else if ((IS_TARANIS_X9(cstate.toType) || IS_FAMILY_HORUS_OR_T16(cstate.toType)) && IS_TARANIS_X7(cstate.fromType)) {
-      if (srcIdx == 4) {
-        delta = -3;  // SF to SF
-      }
-      else if (srcIdx == 5) {
-        delta = -6;  // SH to SH
-      }
-    }
-    else if ((IS_TARANIS_X9(cstate.toType) || IS_FAMILY_HORUS_OR_T16(cstate.toType)) && IS_JUMPER_T12(cstate.fromType)) {
-      if (srcIdx == 4) {
-        delta = -3;  // SF to SF
-      }
-      else if (srcIdx == 5) {
-        delta = -6;  // SH to SH
-      }
     }
 
-    if (index < 0) {
-      delta = -delta;  // invert for !switch
-    }
-
-    index -= delta;
-
+    if (newIdx >= 0)
+      index = (newIdx * 3 + 1 + swtch.rem) * (index < 0 ? -1 : 1);
   }  // SWITCH_TYPE_SWITCH
 
   // final validation (we do not pass model to isAvailable() because we don't know what has or hasn't been converted)
-  if (!isAvailable(NULL, cstate.toGS(), cstate.toType)) {
+  if (newIdx < 0 || !isAvailable(NULL, cstate.toGS(), cstate.toType)) {
     cstate.setInvalid(oldData);
-    type = MAX_SWITCH_TYPE;  // TODO: better way to flag invalid switches?
+    // no switch is safer than an invalid one
+    clear();
   }
   else if (evt == RadioDataConversionState::EVT_CVRT) {
     cstate.setConverted(oldData, RadioDataConversionState::LogField(index, toString(cstate.toType, cstate.toGS(), cstate.toModel())));
@@ -265,4 +247,14 @@ RawSwitch RawSwitch::convert(RadioDataConversionState & cstate)
   }
 
   return *this;
+}
+
+QStringList RawSwitch::getSwitchList(Boards board) const
+{
+  QStringList ret;
+
+  for (int i = 0; i < board.getCapability(Board::Switches); i++) {
+    ret.append(board.getSwitchInfo(i).name);
+  }
+  return ret;
 }

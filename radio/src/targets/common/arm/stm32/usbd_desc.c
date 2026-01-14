@@ -54,12 +54,12 @@
   * @{
   */
 
-#define USBD_VID                            0x0483
+#define USBD_VID_STM                        0x0483    // STM Vendor ID
+#define USBD_VID_PID_CODES                  0x1209    // https://pid.codes
 
 #define USBD_LANGID_STRING                  0x409
-#define USBD_MANUFACTURER_STRING            "FrSky"
+#define USBD_MANUFACTURER_STRING            "OpenTX"
 #define USBD_SERIALNUMBER_FS_STRING         "00000000001B"
-
 
 #if defined(BOOT)
   #define USBD_MSC_PRODUCT_FS_STRING          USB_NAME " Bootloader"
@@ -67,16 +67,27 @@
   #define USBD_MSC_PRODUCT_FS_STRING          USB_NAME " Mass Storage"
 #endif
 
+#define USBD_MSC_VID                        USBD_VID_STM
 #define USBD_MSC_PID                        0x5720
 #define USBD_MSC_CONFIGURATION_FS_STRING    "MSC Config"
 #define USBD_MSC_INTERFACE_FS_STRING        "MSC Interface"
 
-#define USBD_HID_PID                        0x5710
+#define USBD_HID_VID                        USBD_VID_PID_CODES
+#define USBD_HID_PID                        0x4F54     // OpenTX assigned PID
 #define USBD_HID_PRODUCT_FS_STRING          USB_NAME " Joystick"
 #define USBD_HID_CONFIGURATION_FS_STRING    "HID Config"
 #define USBD_HID_INTERFACE_FS_STRING        "HID Interface"
 
-#define USBD_CDC_PID                        0x5740      // do not change, this ID is used by the ST USB driver for Windows
+#if defined(RADIO_FAMILY_TBS)
+#define USBD_AGENT_VID                      0x04D8
+#define USBD_AGENT_PID                      0xF94C
+#define USBD_AGENT_PRODUCT_FS_STRING        USB_NAME MY_DEVICE_NAME
+#define USBD_AGENT_CONFIGURATION_FS_STRING  "HID Config"
+#define USBD_AGENT_INTERFACE_FS_STRING      "HID Interface"
+#endif
+
+#define USBD_CDC_VID                        USBD_VID_STM
+#define USBD_CDC_PID                        0x5740     // do not change, this ID is used by the ST USB driver for Windows
 #define USBD_CDC_PRODUCT_FS_STRING          USB_NAME " Serial Port"
 #define USBD_CDC_CONFIGURATION_FS_STRING    "VSP Config"
 #define USBD_CDC_INTERFACE_FS_STRING        "VSP Interface"
@@ -126,20 +137,39 @@ __ALIGN_BEGIN uint8_t USBD_StrDesc[USB_MAX_STR_DESC_SIZ] __ALIGN_END ;	// modifi
 * @param  length : pointer to data length variable
 * @retval pointer to descriptor buffer
 */
-uint8_t *  USBD_USR_DeviceDescriptor( uint8_t speed , uint16_t *length)
+uint8_t * USBD_USR_DeviceDescriptor( uint8_t speed , uint16_t *length)
 {
-  int pid=0;
+  int vid = 0, pid = 0;
 
   switch (getSelectedUsbMode()) {
     case USB_JOYSTICK_MODE:
+      vid = USBD_HID_VID;
       pid = USBD_HID_PID;
       break;
+#if defined(RADIO_FAMILY_TBS)
+    case USB_AGENT_MODE:
+      vid = USBD_AGENT_VID;
+      pid = USBD_AGENT_PID;
+      break;
+#endif
+
+#if defined(DEBUG)
     case USB_SERIAL_MODE:
+#else
+    case USB_TELEMETRY_MIRROR_MODE:
+#endif
+      vid = USBD_CDC_VID;
       pid = USBD_CDC_PID;
       break;
+
     case USB_MASS_STORAGE_MODE:
+      vid = USBD_MSC_VID;
       pid = USBD_MSC_PID;
       break;
+
+    default:
+      vid = 0;
+      pid = 0;
   }
 
   /* USB Standard Device Descriptor */
@@ -153,10 +183,10 @@ uint8_t *  USBD_USR_DeviceDescriptor( uint8_t speed , uint16_t *length)
       0x00,                       /*bDeviceSubClass*/
       0x00,                       /*bDeviceProtocol*/
       USB_OTG_MAX_EP0_SIZE,       /*bMaxPacketSize*/
-      LOBYTE(USBD_VID),           /*idVendor*/
-      HIBYTE(USBD_VID),           /*idVendor*/
-      LOBYTE(pid),               /*idVendor*/
-      HIBYTE(pid),               /*idVendor*/
+      LOBYTE(vid),                /*idVendor*/
+      HIBYTE(vid),                /*idVendor*/
+      LOBYTE(pid),                /*idVendor*/
+      HIBYTE(pid),                /*idVendor*/
       0x00,                       /*bcdDevice rel. 2.00*/
       0x02,
       USBD_IDX_MFC_STR,           /*Index of manufacturer  string*/
@@ -198,9 +228,21 @@ uint8_t *  USBD_USR_ProductStrDescriptor( uint8_t speed , uint16_t *length)
     case USB_JOYSTICK_MODE:
       USBD_GetString ((uint8_t*)USBD_HID_PRODUCT_FS_STRING, USBD_StrDesc, length);
       break;
+
+#if defined(RADIO_FAMILY_TBS)
+    case USB_AGENT_MODE:
+      USBD_GetString ((uint8_t*)USBD_AGENT_PRODUCT_FS_STRING, USBD_StrDesc, length);
+      break;
+#endif
+#if defined(DEBUG)
+
     case USB_SERIAL_MODE:
+#else
+    case USB_TELEMETRY_MIRROR_MODE:
+#endif
       USBD_GetString ((uint8_t*)USBD_CDC_PRODUCT_FS_STRING, USBD_StrDesc, length);
       break;
+
     case USB_MASS_STORAGE_MODE:
       USBD_GetString ((uint8_t*)USBD_MSC_PRODUCT_FS_STRING, USBD_StrDesc, length);
       break;
@@ -248,7 +290,16 @@ uint8_t *  USBD_USR_ConfigStrDescriptor( uint8_t speed , uint16_t *length)
     case USB_JOYSTICK_MODE:
       USBD_GetString ((uint8_t*)USBD_HID_CONFIGURATION_FS_STRING, USBD_StrDesc, length);
       break;
+#if defined(RADIO_FAMILY_TBS)
+    case USB_AGENT_MODE:
+      USBD_GetString ((uint8_t*)USBD_AGENT_CONFIGURATION_FS_STRING, USBD_StrDesc, length);
+      break;
+#endif
+#if defined(DEBUG)
     case USB_SERIAL_MODE:
+#else
+    case USB_TELEMETRY_MIRROR_MODE:
+#endif
       USBD_GetString ((uint8_t*)USBD_CDC_CONFIGURATION_FS_STRING, USBD_StrDesc, length);
       break;
     case USB_MASS_STORAGE_MODE:
@@ -272,7 +323,17 @@ uint8_t *  USBD_USR_InterfaceStrDescriptor( uint8_t speed , uint16_t *length)
     case USB_JOYSTICK_MODE:
       USBD_GetString ((uint8_t*)USBD_HID_INTERFACE_FS_STRING, USBD_StrDesc, length);
       break;
+#if defined(RADIO_FAMILY_TBS)
+    case USB_AGENT_MODE:
+      USBD_GetString ((uint8_t*)USBD_AGENT_INTERFACE_FS_STRING, USBD_StrDesc, length);
+      break;
+#endif
+
+#if defined(DEBUG)
     case USB_SERIAL_MODE:
+#else
+    case USB_TELEMETRY_MIRROR_MODE:
+#endif
       USBD_GetString ((uint8_t*)USBD_CDC_INTERFACE_FS_STRING, USBD_StrDesc, length);
       break;
     case USB_MASS_STORAGE_MODE:

@@ -42,6 +42,12 @@ char * main_thread_error = nullptr;
 bool simu_shutdown = false;
 bool simu_running = false;
 
+uint32_t telemetryErrors = 0;
+
+#if !defined(HARDWARE_TRIMS)
+uint8_t  g_trimState = 0;
+#endif
+
 #if defined(STM32)
 GPIO_TypeDef gpioa, gpiob, gpioc, gpiod, gpioe, gpiof, gpiog, gpioh, gpioi, gpioj;
 TIM_TypeDef tim1, tim2, tim3, tim4, tim5, tim6, tim7, tim8, tim9, tim10;
@@ -194,7 +200,25 @@ void StartSimu(bool tests, const char * sdPath, const char * settingsPath)
   }
 
 #if defined(RTCLOCK)
-  g_rtcTime = time(0);
+  time_t rawtime;
+  struct tm * timeinfo;
+  time (&rawtime);
+  timeinfo = localtime (&rawtime);
+
+  if (timeinfo != nullptr) {
+    struct gtm gti;
+    gti.tm_sec  = timeinfo->tm_sec;
+    gti.tm_min  = timeinfo->tm_min;
+    gti.tm_hour = timeinfo->tm_hour;
+    gti.tm_mday = timeinfo->tm_mday;
+    gti.tm_mon  = timeinfo->tm_mon;
+    gti.tm_year = timeinfo->tm_year;
+    gti.tm_wday = timeinfo->tm_wday;
+    gti.tm_yday = timeinfo->tm_yday;
+    g_rtcTime = gmktime(&gti);
+  } else {
+    g_rtcTime = rawtime;
+  }
 #endif
 
 #if defined(SIMU_EXCEPTIONS)
@@ -421,6 +445,10 @@ void lcdRefresh()
   }
 }
 
+#if defined(TRAINER_SPORT_SBUS)
+Fifo<uint8_t, TELEMETRY_FIFO_SIZE> telemetryNoDMAFifo;
+#endif
+
 void telemetryPortInit(uint8_t baudrate)
 {
 }
@@ -438,6 +466,47 @@ void sportUpdatePowerOff()
 }
 
 void sportUpdatePowerInit()
+{
+}
+
+void telemetryPortSetDirectionInput()
+{
+}
+
+void telemetryPortSetDirectionOutput()
+{
+}
+
+void rxPdcUsart( void (*pChProcess)(uint8_t x) )
+{
+}
+
+void telemetryPortInit(uint32_t baudrate, uint8_t mode)
+{
+}
+
+bool telemetryGetByte(uint8_t * byte)
+{
+  return false;
+}
+
+void telemetryClearFifo()
+{
+}
+
+void telemetryPortInvertedInit(uint32_t baudrate)
+{
+}
+
+void sportSendByte(uint8_t byte)
+{
+}
+
+void sportSendBuffer(const uint8_t * buffer, uint32_t count)
+{
+}
+
+void check_telemetry_exti()
 {
 }
 
@@ -543,6 +612,9 @@ uint32_t readTrims()
 #if defined(PCBXLITE)
   if (IS_SHIFT_PRESSED())
     result = ((result & 0x03) << 6) | ((result & 0x0c) << 2);
+#elif !defined(HARDWARE_TRIMS)
+  result = g_trimState;
+  g_trimState = 0;
 #endif
 
   return result;
@@ -595,6 +667,7 @@ void USART_Init(USART_TypeDef* USARTx, USART_InitTypeDef* USART_InitStruct) { }
 void USART_Cmd(USART_TypeDef* USARTx, FunctionalState NewState) { }
 void USART_ClearITPendingBit(USART_TypeDef*, unsigned short) { }
 void USART_SendData(USART_TypeDef* USARTx, uint16_t Data) { }
+void USART_OverSampling8Cmd(USART_TypeDef* USARTx, FunctionalState NewState) { }
 uint16_t USART_ReceiveData(USART_TypeDef*) { return 0; }
 void USART_DMACmd(USART_TypeDef* USARTx, uint16_t USART_DMAReq, FunctionalState NewState) { }
 void USART_ITConfig(USART_TypeDef* USARTx, uint16_t USART_IT, FunctionalState NewState) { }
@@ -709,6 +782,12 @@ void boardOff()
 {
 }
 
+#if defined(RADIO_FAMILY_TBS)
+void intmoduleStop()
+{
+}
+#endif
+
 #if defined(PCBHORUS) || defined(PCBTARANIS)
 HardwareOptions hardwareOptions;
 #endif
@@ -768,9 +847,20 @@ void rtcSetTime(const struct gtm * t)
 {
 }
 
+#if defined(USB_SERIAL)
+void usbSerialPutc(uint8_t c)
+{
+}
+#endif
+
 #if defined(AUX_SERIAL)
 AuxSerialRxFifo auxSerialRxFifo(nullptr);
 uint8_t auxSerialMode;
+
+void auxSerialSetup(unsigned int baudrate, bool dma, uint16_t length, uint16_t parity, uint16_t stop)
+{
+}
+
 void auxSerialInit(unsigned int mode, unsigned int protocol)
 {
 }
@@ -791,6 +881,11 @@ void auxSerialStop()
 #if defined(AUX2_SERIAL)
 AuxSerialRxFifo aux2SerialRxFifo(nullptr);
 uint8_t aux2SerialMode;
+
+void aux2SerialSetup(unsigned int baudrate, bool dma, uint16_t length, uint16_t parity, uint16_t stop)
+{
+}
+
 void aux2SerialInit(unsigned int mode, unsigned int protocol)
 {
 }

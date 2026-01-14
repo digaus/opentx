@@ -56,8 +56,11 @@ void onSwitchLongEnterPress(const char * result)
 int checkIncDec(event_t event, int val, int i_min, int i_max, unsigned int i_flags, IsValueAvailable isValueAvailable, const CheckIncDecStops &stops)
 {
   int newval = val;
-
+#if defined(ROTARY_ENCODER_NAVIGATION)
   if (s_editMode>0 && event==EVT_ROTARY_RIGHT) {
+#else
+  if (s_editMode>0 && (event==EVT_KEY_FIRST(KEY_PLUS) || event==EVT_KEY_REPT(KEY_PLUS))) {
+#endif
     newval += min<int>(rotencSpeed, i_max-val);
     while (isValueAvailable && !isValueAvailable(newval) && newval<=i_max) {
       newval++;
@@ -67,7 +70,11 @@ int checkIncDec(event_t event, int val, int i_min, int i_max, unsigned int i_fla
       AUDIO_KEY_ERROR();
     }
   }
+#if defined(ROTARY_ENCODER_NAVIGATION)
   else if (s_editMode>0 && event==EVT_ROTARY_LEFT) {
+#else
+  if (s_editMode>0 && (event==EVT_KEY_FIRST(KEY_MINUS) || event==EVT_KEY_REPT(KEY_MINUS))) {
+#endif
     newval -= min<int>(rotencSpeed, val-i_min);
     while (isValueAvailable && !isValueAvailable(newval) && newval>=i_min) {
       newval--;
@@ -99,7 +106,7 @@ int checkIncDec(event_t event, int val, int i_min, int i_max, unsigned int i_fla
 #if defined(AUTOSWITCH)
       else {
         unsigned int swtch = abs(getMovedSwitch());
-        if (swtch) {
+        if (swtch && !IS_SWITCH_MULTIPOS(swtch)) {
           newval = switchToMix(swtch);
         }
       }
@@ -134,7 +141,9 @@ int checkIncDec(event_t event, int val, int i_min, int i_max, unsigned int i_fla
       }
 #endif
       if (i_min <= MIXSRC_FIRST_STICK && i_max >= MIXSRC_FIRST_STICK)      POPUP_MENU_ADD_ITEM(STR_MENU_STICKS);
+#if NUM_POTS > 0
       if (i_min <= MIXSRC_FIRST_POT && i_max >= MIXSRC_FIRST_POT)          POPUP_MENU_ADD_ITEM(STR_MENU_POTS);
+#endif
       if (i_min <= MIXSRC_MAX && i_max >= MIXSRC_MAX)                      POPUP_MENU_ADD_ITEM(STR_MENU_MAX);
 #if defined(HELI)
       if (i_min <= MIXSRC_FIRST_HELI && i_max >= MIXSRC_FIRST_HELI)        POPUP_MENU_ADD_ITEM(STR_MENU_HELI);
@@ -217,7 +226,11 @@ void check(event_t event, uint8_t curr, const MenuHandlerFunc * menuTab, uint8_t
   if (menuTab) {
     int cc = curr;
     switch (event) {
+#if defined(KEYS_GPIO_REG_PAGEUP)
+      case EVT_KEY_FIRST(KEY_PAGEUP):
+#else
       case EVT_KEY_LONG(KEY_PAGE):
+#endif
         if (s_editMode>0)
           break;
 
@@ -228,7 +241,11 @@ void check(event_t event, uint8_t curr, const MenuHandlerFunc * menuTab, uint8_t
         killEvents(event);
         break;
 
+#if defined(KEYS_GPIO_REG_PAGEDN)
+      case EVT_KEY_FIRST(KEY_PAGEDN):
+#else
       case EVT_KEY_BREAK(KEY_PAGE):
+#endif
         if (s_editMode>0)
           break;
 
@@ -302,12 +319,14 @@ void check(event_t event, uint8_t curr, const MenuHandlerFunc * menuTab, uint8_t
         }
       }
       break;
-
+#if defined(ROTARY_ENCODER_NAVIGATION)
     case EVT_ROTARY_RIGHT:
-    case EVT_KEY_FIRST(KEY_RIGHT):
       AUDIO_KEY_PRESS();
       // no break
-    case EVT_KEY_REPT(KEY_RIGHT):
+#else
+    case EVT_KEY_FIRST(KEY_DOWN):
+    case EVT_KEY_REPT(KEY_DOWN):
+#endif
       if (s_editMode > 0) break; // TODO it was !=
       if ((COLATTR(l_posVert) & NAVIGATION_LINE_BY_LINE)) {
         if (l_posHorz >= 0) {
@@ -333,12 +352,14 @@ void check(event_t event, uint8_t curr, const MenuHandlerFunc * menuTab, uint8_t
 
       l_posHorz = POS_HORZ_INIT(l_posVert);
       break;
-
+#if defined(ROTARY_ENCODER_NAVIGATION)
     case EVT_ROTARY_LEFT:
-    case EVT_KEY_FIRST(KEY_LEFT):
       AUDIO_KEY_PRESS();
       // no break
-    case EVT_KEY_REPT(KEY_LEFT):
+#else
+    case EVT_KEY_FIRST(KEY_UP):
+    case EVT_KEY_REPT(KEY_UP):
+#endif
       if (s_editMode > 0) break; // TODO it was !=
       if ((COLATTR(l_posVert) & NAVIGATION_LINE_BY_LINE)) {
         if (l_posHorz >= 0) {
